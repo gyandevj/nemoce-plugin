@@ -1,4 +1,3 @@
-from argparse import Namespace
 from datetime import datetime, timedelta
 from http import HTTPStatus
 from itertools import chain
@@ -61,7 +60,6 @@ from NEMO.utilities import (
 from NEMO.views.area_access import able_to_self_log_out_of_area
 from NEMO.views.calendar import shorten_reservation
 from NEMO.views.customization import (
-    CalendarCustomization,
     EmailsCustomization,
     InterlockCustomization,
     RemoteWorkCustomization,
@@ -226,14 +224,18 @@ def tool_config_history(request, tool_id):
         conf = history.get_configuration()
         conf.name = history.item_name
         conf.current_settings = history.setting
+        config_item = conf
         if isinstance(conf, ConfigurationPrecursor):
-            conf.current_positions = str(history.position)
+            config_item = conf.configurationprecursorslot_set.first()
+            config_item.setting = history.setting
+            config_item.position = str(history.position)
+
         configs.append(
             {
                 "modification_time": history.modification_time,
                 "configuration": conf,
                 "user": history.user,
-                "html": mark_safe(configuration._render_for_one(conf, render_as_form=False)),
+                "html": mark_safe(configuration._render_for_one(conf, config_item, render_as_form=False)),
             }
         )
     return render(request, "configuration/configuration_history.html", {"configs": configs})

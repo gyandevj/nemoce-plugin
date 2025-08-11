@@ -12,21 +12,21 @@ class ConfigurationEditor(Widget):
     template_name = "configuration/configuration_line_item.html"
 
     def render(self, name, value, attrs=None, **kwargs):
+        from NEMO.models import Configuration
+
         result = ""
         for config in value["configurations"]:
             render_as_form = value.get("render_as_form", None)
             if render_as_form is None:
                 render_as_form = not config.tool.in_use() and config.user_is_maintainer(value["user"])
             if len(config.range_of_configurable_items()) == 1:
-                result += self._render_for_one(config, render_as_form)
+                item = config if isinstance(config, Configuration) else config.configurationprecursorslot_set.first()
+                result += self._render_for_one(config, item, render_as_form)
             else:
                 result += self._render_for_multiple(config, render_as_form)
         return mark_safe(result)
 
-    def _render_for_one(self, config, render_as_form=None):
-        from NEMO.models import Configuration
-
-        config_item = config if isinstance(config, Configuration) else config.configurationprecursorslot_set.first()
+    def _render_for_one(self, config, config_item, render_as_form=None):
         result = "<p><label class='form-inline'>" + escape(config.name)
         result += self._render_configuration_line_item("", config_item, 0, render_as_form).strip()
         result += "</label></p>"
