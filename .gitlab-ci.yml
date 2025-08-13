@@ -34,7 +34,7 @@ Test python 3.13:
 
 .test_mysql: &test_mysql
   stage: test
-  image: python:3.11
+  image: python:3.11-bookworm
   variables:
     DATABASE_ENGINE: "django.db.backends.mysql"
     DATABASE_HOST: "mysql"
