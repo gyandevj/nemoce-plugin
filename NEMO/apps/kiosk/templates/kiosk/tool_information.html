@@ -597,7 +597,7 @@
 	update_stop_button();
 	{% if customer.active_projects|length == 1 %}update_start_button();{% endif %}
 
-	{% if tool.in_use %}
+	{% if tool.in_use and not enable_is_take_over %}
 		$('body').on('dynamic-form-group-changed dynamic-form-field-changed', update_stop_button);
 		$('body').on('change keyup', '#downtime', update_stop_button);
 	{% else %}

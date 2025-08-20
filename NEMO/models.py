@@ -2323,6 +2323,9 @@ class QualificationLevel(SerializationByNameModel):
         default=False,
         help_text="Check this box if the times should apply to weekend days. Default is False, meaning the user won't be qualified on weekends regardless of times.",
     )
+    fulfill_training_requests = models.BooleanField(
+        default=True, help_text="Check this box to fulfill pending training requests upon qualification."
+    )
 
     def is_allowed_at(self, time):
         return self.is_allowed(time)

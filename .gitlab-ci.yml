@@ -34,7 +34,7 @@ Test python 3.13:
 
 .test_mysql: &test_mysql
   stage: test
-  image: python:3.11
+  image: python:3.11-bookworm
   variables:
     DATABASE_ENGINE: "django.db.backends.mysql"
     DATABASE_HOST: "mysql"
@@ -49,7 +49,7 @@ Test python 3.13:
   before_script:
     - apt-get update && apt-get install -y default-mysql-client
     - python -m pip install mysqlclient
-    - until mysqladmin ping -h"${DATABASE_HOST}" --silent; do echo "Waiting for database..."; sleep 1; done
+    - until mysqladmin ping -h "${DATABASE_HOST}" --silent; do echo "Waiting for database..."; sleep 1; done
   script:
     - python -m pip install ./
     - python ./run_tests.py
