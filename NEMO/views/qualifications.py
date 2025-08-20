@@ -116,7 +116,8 @@ def record_qualification(
                 if training_session:
                     training_session.qualification = qualification
                 # Find and fulfill training request since they are now qualified
-                fulfill_training_requests(t, request_user, [user])
+                if not qualification_level or qualification_level.fulfill_training_requests:
+                    fulfill_training_requests(t, request_user, [user])
             original_physical_access_levels = set(user.physical_access_levels.all())
             physical_access_level_automatic_enrollment = list(
                 set(
