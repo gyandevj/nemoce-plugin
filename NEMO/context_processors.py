@@ -20,7 +20,7 @@ def hide_logout_button(request):
 
 def base_context(request):
     user: User = getattr(request, "user", None)
-    customization_values = {customization.name: customization.value for customization in Customization.objects.all()}
+    customization_values = CustomizationBase.get_all()
     try:
         if "no_header" in request.GET:
             if request.GET["no_header"] == "True":
@@ -96,7 +96,6 @@ def base_context(request):
         facility_managers_exist = User.objects.filter(is_active=True, is_facility_manager=True).exists()
     except:
         facility_managers_exist = False
-    customization_values = CustomizationBase.get_all()
     return {
         "customizations": customization_values,
         "facility_name": customization_values.get("facility_name"),

@@ -1266,10 +1266,18 @@ class UserAdminForm(forms.ModelForm):
         widget=FilteredSelectMultiple(verbose_name="tools", is_stacked=False),
     )
 
+    primary_owner_on_tools = forms.ModelMultipleChoiceField(
+        queryset=Tool.objects.filter(parent_tool__isnull=True),
+        required=False,
+        widget=FilteredSelectMultiple(verbose_name="tools (readonly)", is_stacked=False, attrs={"disabled": True}),
+        disabled=True,
+    )
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.instance: User = self.instance
         if self.instance.pk:
+            self.fields["primary_owner_on_tools"].initial = self.instance.primary_tool_owner.all()
             self.fields["backup_owner_on_tools"].initial = self.instance.backup_for_tools.all()
             self.fields["superuser_on_tools"].initial = self.instance.superuser_for_tools.all()
             self.fields["staff_on_tools"].initial = self.instance.staff_for_tools.all()
@@ -1321,6 +1329,7 @@ class UserAdmin(admin.ModelAdmin):
             "Facility information",
             {
                 "fields": (
+                    "primary_owner_on_tools",
                     "backup_owner_on_tools",
                     "staff_on_tools",
                     "superuser_on_tools",
@@ -2413,6 +2422,7 @@ class QualificationLevelAdmin(admin.ModelAdmin):
         "schedule_start_time",
         "schedule_end_time",
         "qualify_weekends",
+        "fulfill_training_requests",
     )
 
 
