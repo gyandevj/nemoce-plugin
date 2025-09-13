@@ -78,17 +78,20 @@ def create_or_modify_user(request, user_id):
     for access in access_levels:
         dict_area.setdefault(access.area.id, []).append(access)
 
-    try:
-        user = User.objects.get(id=user_id)
-    except:
-        user = None
+    user = None
+    if user_id != "new":
+        user = (
+            User.objects.filter(id=user_id).prefetch_related("projects__manager_set", "physical_access_levels").first()
+        )
 
     readonly = readonly_users(request)
     dictionary = {
-        "projects": Project.objects.filter(active=True, account__active=True),
+        "projects": Project.objects.filter(active=True, account__active=True).prefetch_related("manager_set"),
         "tools": Tool.objects.filter(visible=True),
         "qualification_levels": QualificationLevel.objects.all(),
-        "qualifications": Qualification.objects.filter(user=user),
+        "qualifications": Qualification.objects.filter(user=user)
+        .select_related("tool", "qualification_level")
+        .prefetch_related("trainingsession_set"),
         "area_access_dict": dict_area,
         "area_access_levels": area_access_levels,
         "one_year_from_now": timezone.localdate() + timedelta(days=365),
