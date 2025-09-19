@@ -1,6 +1,6 @@
 import logging
 from collections import defaultdict
-from datetime import datetime, timedelta, time
+from datetime import datetime, time, timedelta
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from dateutil.rrule import DAILY, rrule
@@ -47,6 +47,7 @@ from NEMO.utilities import (
     export_format_datetime,
     format_datetime,
     get_recurring_rule,
+    get_tool_categories_for_filters,
     is_trainer,
     localize,
     new_model_copy,
@@ -359,12 +360,17 @@ def get_upcoming_events_context(request) -> Dict:
     mark_training_objects_expired()
     date_now = timezone.now()
     training_events = TrainingEvent.objects.filter(end__gte=date_now).exclude(start__lte=date_now).order_by("start")
-    tools = Tool.objects.in_bulk(distinct_qs_value_list(training_events, "tool")).values()
+    tool_ids = distinct_qs_value_list(training_events, "tool")
     trainers = User.objects.in_bulk(distinct_qs_value_list(training_events, "trainer")).values()
     training_dates = training_events.values_list("start", flat=True)
     dates = set(training_date.astimezone().date() for training_date in training_dates)
     dates = sorted(dates)
     tool_filter = request.GET.get("tool", "all-tools")
+    tool_category_filter = request.GET.get("tool_category", "all-categories")
+    if tool_category_filter != "all-categories":
+        training_events = training_events.filter(
+            Q(tool___category=tool_category_filter) | (Q(tool___category__startswith=tool_category_filter + "/"))
+        )
     if tool_filter != "all-tools":
         training_events = training_events.filter(tool_id=tool_filter)
     trainer_filter = request.GET.get("trainer", "all-trainers")
@@ -385,7 +391,9 @@ def get_upcoming_events_context(request) -> Dict:
     return {
         "training_events": training_events,
         "selected_tool": tool_filter,
-        "tools": tools,
+        "tools": Tool.objects.in_bulk(tool_ids).values(),
+        "selected_category": tool_category_filter,
+        "tool_categories": [cat.name for cat in get_tool_categories_for_filters(Tool.objects.filter(id__in=tool_ids))],
         "selected_trainer": trainer_filter,
         "trainers": trainers,
         "selected_date": date_filter,
