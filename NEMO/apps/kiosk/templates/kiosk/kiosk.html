@@ -100,9 +100,11 @@
         {% endwith %}
 		let timeout_handle = null;
 		let countdown_handle = null;
-		let occupancy = new URLSearchParams(window.location.search).get('occupancy');
-        let usage = new URLSearchParams(window.location.search).get('usage') !== null;
-        let alerts = new URLSearchParams(window.location.search).get('alerts') !== null;
+        const current_url_parameters = new URLSearchParams(window.location.search);
+		const occupancy = current_url_parameters.get("occupancy");
+        const usage = current_url_parameters.get("usage") !== null;
+        const alerts = current_url_parameters.get("alerts") !== null;
+        const virtual_inputs = current_url_parameters.get("virtual_inputs") !== "false";
 		let default_content_element = $("#default_content");
 		let status_element = $("#status");
 		let error_element = $("#error");
@@ -223,9 +225,8 @@
 		}
 		function load_choices(badge_number)
 		{
-            const urlParams = new URLSearchParams(window.location.search);
-            const categories = urlParams.getAll('category');
-            const tool_names = urlParams.getAll('tool');
+            const categories = current_url_parameters.getAll('category');
+            const tool_names = current_url_parameters.getAll('tool');
             let params = new URLSearchParams();
             params.append('location', '{{ location }}');
     		params.append('badge_number', badge_number);
@@ -243,7 +244,7 @@
 			error_element.hide();
 			error_interlock_element.hide();
 			status_element.html("<h1>Loading tool information...</h1>").show();
-            ajax_get(url, undefined, load_complete);
+            ajax_get(url, "virtual_inputs="+virtual_inputs, load_complete);
 		}
 		function tool_report_problem(url)
         {

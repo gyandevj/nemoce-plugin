@@ -498,6 +498,7 @@ def category_choices(request, category, user_id):
 @permission_required("NEMO.kiosk")
 @require_GET
 def tool_information(request, tool_id, user_id, back):
+    virtual_inputs = request.GET.get("virtual_inputs") != "false"
     tool = Tool.objects.get(id=tool_id, visible=True)
     customer = User.objects.get(id=user_id)
     allow_take_over = ToolCustomization.get_bool("tool_control_allow_take_over")
@@ -531,10 +532,10 @@ def tool_information(request, tool_id, user_id, back):
         "tool_credentials": tool_credentials,
         "rendered_configuration_html": tool.configuration_widget(customer),
         "pre_usage_questions": DynamicForm(tool.pre_usage_questions).render(
-            tool, "pre_usage_questions", virtual_inputs=True
+            tool, "pre_usage_questions", virtual_inputs=virtual_inputs
         ),
         "post_usage_questions": DynamicForm(tool.post_usage_questions).render(
-            tool, "post_usage_questions", virtual_inputs=True
+            tool, "post_usage_questions", virtual_inputs=virtual_inputs
         ),
         "back": back,
         "tool_control_show_task_details": ToolCustomization.get_bool("tool_control_show_task_details"),
