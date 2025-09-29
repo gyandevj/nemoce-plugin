@@ -1417,6 +1417,7 @@ def create_training_event(request):
     return HttpResponse()
 
 
+@login_required
 @require_POST
 def resize_training_event(request):
     """Resize a training event"""
@@ -1427,6 +1428,7 @@ def resize_training_event(request):
     return modify_training_event(request, None, delta)
 
 
+@login_required
 @require_POST
 def move_training_event(request):
     """Move a training event"""
