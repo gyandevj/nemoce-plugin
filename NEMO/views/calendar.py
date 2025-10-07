@@ -744,18 +744,25 @@ def parse_configuration_entry(reservation, key, value, request) -> Optional[Tupl
 def validate_configuration_options(options: List[Tuple[int, ConfigurationOption]]):
     # group options with precursors, that don't allow duplicates
     grouped_options = defaultdict(list)
+    grouped_positions = defaultdict(list)
     for item in options:
         option: ConfigurationOption = item[1]
-        if (
-            option.precursor_configuration
-            and option.current_setting
-            and not option.precursor_configuration.allow_duplicate_settings
-        ):
+        config = option.precursor_configuration
+        if config and option.current_setting and not config.allow_duplicate_settings:
             # raise exception if the same setting is used more than once
-            if option.current_setting in grouped_options[option.precursor_configuration_id]:
+            if option.current_setting in grouped_options[config.id]:
                 raise ToolConfigurationException(f"{option.current_setting} is set in more than one slot")
             else:
-                grouped_options[option.precursor_configuration_id].append(option.current_setting)
+                grouped_options[config.id].append(option.current_setting)
+        if option.precursor_configuration and option.current_position:
+            # raise exception if the same position is used more than once
+            if option.current_position in grouped_positions[config.id]:
+                name = config.configurable_item_name or config.name
+                raise ToolConfigurationException(
+                    f"slot #{option.current_position} is used with more than one {name.lower()}"
+                )
+            else:
+                grouped_positions[config.id].append(option.current_position)
 
 
 @staff_member_or_tool_staff_required
