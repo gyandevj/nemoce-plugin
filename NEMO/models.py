@@ -2743,8 +2743,7 @@ class ConfigurationPrecursorSlot(BaseModel):
                         if option.current_setting in all_options:
                             exclude_ids.append(all_options[option.current_setting])
                             del all_options[option.current_setting]
-                        else:
-                            all_options[option.current_setting] = option.id
+                        all_options[option.current_setting] = option.id
             if exclude_ids:
                 options = options.exclude(id__in=exclude_ids)
             if position is None:
