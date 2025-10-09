@@ -4,6 +4,10 @@
     {% load static %}
     <script type="text/javascript" src="{% static "datetimepicker/bootstrap-datetimepicker.js" %}"></script>
     <link rel="stylesheet" type="text/css" href="{% static "datetimepicker/bootstrap-datetimepicker.css" %}" />
+    {# Select 2 #}
+    <script type="text/javascript" src="{% static "select2/js/select2.min.js" %}"></script>
+    <link rel="stylesheet" type="text/css" href="{% static "select2/css/select2.min.css" %}" />
+    <link rel="stylesheet" type="text/css" href="{% static "select2/css/select2-bootstrap.min.css" %}" />
 {% endblock %}
 {% block title %}Training dashboard{% endblock %}
 {% block content %}
@@ -78,5 +82,10 @@
 				else ajax_get(url, undefined, ajax_success_callback, general_failure_callback);
             {% endif %}
 		}
+
+        window.addEventListener('load', function()
+        {
+            $("select.select-autocomplete").select2({theme: "bootstrap"});
+        }, true);
     </script>
 {% endblock %}

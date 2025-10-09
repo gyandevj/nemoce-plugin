@@ -10,7 +10,7 @@
                     <label for="selected_user">Managed user</label>
                 </div>
                 <div class="col-sm-4">
-                    <select class="form-control"
+                    <select class="form-control select-autocomplete"
                             id="selected_user"
                             name="selected_user"
                             onchange="window.location.href = '{{ request.path|concat:"?selected_user=" }}'+this.value">
