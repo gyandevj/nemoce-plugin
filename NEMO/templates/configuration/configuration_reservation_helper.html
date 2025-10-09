@@ -78,7 +78,9 @@
                                     <option selected value="">{{ slot.setting }}</option>
                                 {% else %}
                                     {% with available_settings=slot|precursor_slot_available_settings:reservation_start %}
-                                        {% if precursor_config.absence_string %}<option value="">{{ precursor_config.absence_string }}</option>{% endif %}
+                                        {% if "" in available_settings %}
+                                            {% if precursor_config.absence_string %}<option value="">{{ precursor_config.absence_string }}</option>{% endif %}
+                                        {% endif %}
                                         {% for setting in precursor_config.available_settings_as_list %}
                                             {% if setting in available_settings %}
                                                 <option value={{ forloop.counter0 }}>{{ setting }}

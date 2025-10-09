@@ -2711,14 +2711,14 @@ class ConfigurationPrecursorSlot(BaseModel):
             self.setting = self.precursor_configuration.get_available_setting(choice)
         self.save()
 
-    def locked_position_for_reservation(self, start_time: datetime) -> ConfigurationOption:
+    def locked_position_for_reservation(self, start_time: datetime.datetime) -> Optional[ConfigurationOption]:
         locked_option = self.locked_option_for_reservation(start_time, self.position)
-        return locked_option.first() if locked_option else None
+        return locked_option[0] if locked_option else None
 
-    def locked_setting_any_position_for_reservation(self, start_time: datetime) -> QuerySetType[ConfigurationOption]:
+    def locked_setting_any_position_for_reservation(self, start_time: datetime.datetime) -> List[ConfigurationOption]:
         return self.locked_option_for_reservation(start_time, None)
 
-    def locked_option_for_reservation(self, start_time: datetime, position) -> QuerySetType[ConfigurationOption]:
+    def locked_option_for_reservation(self, start_time: datetime.datetime, position) -> List[ConfigurationOption]:
         if start_time and self.schedule and self.schedule.is_active(start_time):
             range_start, range_end = self.schedule.get_date_range(start_time)
             reservation_filter = Q(
@@ -2751,9 +2751,22 @@ class ConfigurationPrecursorSlot(BaseModel):
                 options = options.filter(current_position__isnull=True, locked=False)
             else:
                 options = options.filter(current_position=position)
-            return options
+            # remove duplicate with same setting and position (i.e. Au with Any position if there multiple times)
+            seen_settings_any = set()
+            result: List[ConfigurationOption] = []
+            for option in options:
+                if option.current_position is None:
+                    # Only allow one row per setting where position is Any
+                    if option.current_setting not in seen_settings_any:
+                        seen_settings_any.add(option.current_setting)
+                        result.append(option)
+                else:
+                    # Always keep non-Any rows
+                    result.append(option)
+            return result
+        return []
 
-    def available_positions_for_reservation(self, start_time: datetime = None):
+    def available_positions_for_reservation(self, start_time: datetime.datetime = None) -> List[int]:
         locked_option = self.locked_position_for_reservation(start_time)
         if locked_option:
             return [locked_option.current_position]
@@ -2767,7 +2780,7 @@ class ConfigurationPrecursorSlot(BaseModel):
             )
         ]
 
-    def all_locked_settings(self, schedule, start_time: datetime = None) -> List[str]:
+    def all_locked_settings(self, schedule, start_time: datetime.datetime = None) -> List[str]:
         locked = []
         if schedule and not self.precursor_configuration.allow_duplicate_settings:
             for slot in self.precursor_configuration.configurationprecursorslot_set.all():
@@ -2783,7 +2796,10 @@ class ConfigurationPrecursorSlot(BaseModel):
                     locked.append(setting.current_setting)
         return locked
 
-    def available_settings_for_reservation(self, start_time: datetime = None):
+    def available_settings_for_reservation(self, start_time: datetime.datetime = None):
+        # set a special case for the blank option which we don't want to allow if there is
+        # only one locked option
+        blank_option = [""]
         locked_option = self.locked_position_for_reservation(start_time)
         if locked_option:
             return [locked_option.current_setting]
@@ -2793,6 +2809,7 @@ class ConfigurationPrecursorSlot(BaseModel):
             free_slots = [
                 slot.id
                 for slot in self.precursor_configuration.configurationprecursorslot_set.filter(permanent_setting=False)
+                if not slot.locked_position_for_reservation(start_time)
             ]
             try:
                 return [locked_settings[free_slots.index(self.id)].current_setting]
@@ -2800,7 +2817,7 @@ class ConfigurationPrecursorSlot(BaseModel):
                 pass
         available_settings = self.precursor_configuration.available_settings_as_list()
         locked_settings = self.all_locked_settings(self.schedule, start_time)
-        return [setting for setting in available_settings if setting not in locked_settings]
+        return blank_option + [setting for setting in available_settings if setting not in locked_settings]
 
     def clean(self):
         errors = {}
