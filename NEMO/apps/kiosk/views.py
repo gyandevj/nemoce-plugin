@@ -1,5 +1,4 @@
-from argparse import Namespace
-from datetime import datetime, timedelta, time
+from datetime import datetime, time, timedelta
 from http import HTTPStatus
 from typing import Dict
 
@@ -624,7 +623,6 @@ def tool_report_problem(request, tool_id, user_id, back):
 
     dictionary = {
         "tool": tool,
-        "date": None,
         "customer": customer,
         "back": back,
         "task_categories": TaskCategory.objects.filter(stage=TaskCategory.Stage.INITIAL_ASSESSMENT),
