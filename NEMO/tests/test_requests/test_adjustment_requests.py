@@ -33,12 +33,15 @@ class AdjustmentRequestTestCase(TestCase):
         response = self.client.get(reverse("adjustment_requests"))
         self.assertContains(response, "not enabled", status_code=400)
 
-    def test_enable_adjustment_requests_staff_only(self):
+    def test_enable_adjustment_requests_reviewers_only(self):
         AdjustmentRequestsCustomization.set("adjustment_requests_enabled", "reviewers_only")
         login_as_user(self.client)
         response = self.client.get(reverse("adjustment_requests"))
         self.assertContains(response, "not enabled", status_code=400)
-        login_as_staff(self.client)
+        tool = Tool.objects.create(name="tool")
+        user = User.objects.create(username="test", first_name="t", last_name="e")
+        tool.adjustment_request_reviewers.add(user)
+        login_as(self.client, user)
         response = self.client.get(reverse("adjustment_requests"))
         self.assertTrue(response.status_code == 200)
 
