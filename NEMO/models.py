@@ -2756,7 +2756,7 @@ class ConfigurationPrecursorSlot(BaseModel):
                 options = options.filter(current_position__isnull=True, locked=False)
             else:
                 options = options.filter(current_position=position)
-            # remove duplicate with same setting and position (i.e. Au with Any position if there multiple times)
+            # remove duplicate with the same setting and position (i.e., Au with Any position if it's there multiple times)
             seen_settings_any = set()
             result: List[ConfigurationOption] = []
             for option in options:
@@ -2930,7 +2930,7 @@ class ConfigurationOption(BaseModel, ConfigurationMixin):
         return f"{self.name}, options: {self.available_settings_as_list()}{selected}{position}"
 
     class Meta:
-        ordering = ["configuration__display_order"]
+        ordering = ["configuration__display_order", "id"]
 
 
 class TrainingSession(BaseModel, BillableItemMixin):
