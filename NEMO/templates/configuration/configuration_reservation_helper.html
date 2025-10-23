@@ -59,11 +59,15 @@
                         <div class="col-sm-6">
                             <label for="configurationslot_{{ precursor_config.id }}__slot_{{ slot.id }}__display_order_{{ precursor_config.display_order }}">
                                 {% if precursor_config.configurable_item_name %}
-                                    {{ precursor_config.configurable_item_name }}
+                                    {{ precursor_config.configurable_item_name }}:
                                 {% else %}
-                                    {{ precursor_config.name }}
+                                    {{ precursor_config.name }}:
                                 {% endif %}
-                                :
+                                {% with available_settings=slot|precursor_slot_available_settings:reservation_start %}
+                                    {% if "" in available_settings and precursor_config.absence_string and available_settings|length == 2 %}
+                                        ({{ available_settings.1 }})
+                                    {% endif %}
+                                {% endwith %}
                             </label>
                             {% if slot.permanent_setting %}
                                 <input type="hidden"
@@ -78,8 +82,8 @@
                                     <option selected value="">{{ slot.setting }}</option>
                                 {% else %}
                                     {% with available_settings=slot|precursor_slot_available_settings:reservation_start %}
-                                        {% if "" in available_settings %}
-                                            {% if precursor_config.absence_string %}<option value="">{{ precursor_config.absence_string }}</option>{% endif %}
+                                        {% if "" in available_settings and precursor_config.absence_string %}
+                                            <option value="">{{ precursor_config.absence_string }}</option>
                                         {% endif %}
                                         {% for setting in precursor_config.available_settings_as_list %}
                                             {% if setting in available_settings %}

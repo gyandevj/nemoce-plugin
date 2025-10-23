@@ -2795,7 +2795,7 @@ class ConfigurationPrecursorSlot(BaseModel):
                 locked_option = slot.locked_position_for_reservation(start_time)
                 if locked_option:
                     locked.append(locked_option.current_setting)
-                    break
+                    continue
                 locked_settings = slot.locked_setting_any_position_for_reservation(start_time)
                 for setting in locked_settings or []:
                     locked.append(setting.current_setting)
@@ -2807,7 +2807,7 @@ class ConfigurationPrecursorSlot(BaseModel):
         blank_option = [""]
         locked_option = self.locked_position_for_reservation(start_time)
         if locked_option:
-            return [locked_option.current_setting]
+            return blank_option + [locked_option.current_setting]
         locked_settings = self.locked_setting_any_position_for_reservation(start_time)
         if locked_settings:
             # Figure out free slots and setting that we HAVE to have set (with any position)
@@ -2817,7 +2817,7 @@ class ConfigurationPrecursorSlot(BaseModel):
                 if not slot.locked_position_for_reservation(start_time)
             ]
             try:
-                return [locked_settings[free_slots.index(self.id)].current_setting]
+                return blank_option + [locked_settings[free_slots.index(self.id)].current_setting]
             except:
                 pass
         available_settings = self.precursor_configuration.available_settings_as_list()
