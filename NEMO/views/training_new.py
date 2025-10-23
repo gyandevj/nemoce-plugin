@@ -1098,10 +1098,13 @@ def create_recurring_training(
         date_until_no_tz,
         int(recurrence_interval if recurrence_interval else 1),
     )
+    auto_cancel_timedelta = (training_event.start - training_event.auto_cancel) if training_event.auto_cancel else None
     for rule in list(rules):
         new_training_event = new_model_copy(training_event)
         new_training_event.start = localize(start_no_tz.replace(year=rule.year, month=rule.month, day=rule.day))
         new_training_event.end = new_training_event.start + duration
+        if auto_cancel_timedelta:
+            new_training_event.auto_cancel = new_training_event.start - auto_cancel_timedelta
         occurrence = f"{new_training_event.start.date()} {format_datetime(new_training_event.start.time())} - {format_datetime(new_training_event.end.time())}"
         try:
             policy_problem = policy.check_to_create_training(new_training_event)
