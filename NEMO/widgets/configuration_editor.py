@@ -13,12 +13,16 @@ class ConfigurationEditor(Widget):
 
     def render(self, name, value, attrs=None, **kwargs):
         from NEMO.models import Configuration
+        from NEMO.views.customization import ToolCustomization
 
         result = ""
         for config in value["configurations"]:
             render_as_form = value.get("render_as_form", None)
             if render_as_form is None:
-                render_as_form = not config.tool.in_use() and config.user_is_maintainer(value["user"])
+                allow_change_while_in_use = ToolCustomization.get_bool("tool_configuration_change_while_in_use")
+                render_as_form = (allow_change_while_in_use or not config.tool.in_use()) and config.user_is_maintainer(
+                    value["user"]
+                )
             if len(config.range_of_configurable_items()) == 1:
                 item = config if isinstance(config, Configuration) else config.configurationprecursorslot_set.first()
                 result += self._render_for_one(config, item, render_as_form)
