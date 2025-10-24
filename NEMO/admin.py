@@ -672,6 +672,7 @@ class ConfigurationPrecursorAdmin(admin.ModelAdmin):
         "slot_number",
     )
     filter_horizontal = ("maintainers",)
+    autocomplete_fields = ["tool"]
     inlines = [ConfigurationPrecursorSlotInline]
     fieldsets = (
         (
