@@ -127,7 +127,6 @@ NEMO-CE dev build:
     - docker logout
   only:
     - schedules
-    - master
 
 NEMO-CE Release:
   stage: build
