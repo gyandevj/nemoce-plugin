@@ -485,7 +485,7 @@ def user_preferences(request):
     user_view_options = StatusDashboardCustomization.get("dashboard_staff_status_user_view")
     staff_view_options = StatusDashboardCustomization.get("dashboard_staff_status_staff_view")
     user_view = user_view_options if not user.is_staff else staff_view_options if not user.is_facility_manager else ""
-    form = UserPreferencesForm(data=request.POST or None, instance=user.preferences)
+    form = UserPreferencesForm(data=request.POST or None, instance=user.get_preferences())
     if not is_trainer(user):
         form.fields["email_send_training_emails"].choices = EmailNotificationType.on_choices()
     if not show_staff_status(request) or user_view == "day":
@@ -498,7 +498,6 @@ def user_preferences(request):
             messages.error(request, "Please correct the errors below:")
     dictionary = {
         "form": form,
-        "user_preferences": user.get_preferences(),
         "user_view": user_view,
         "tool_list": (
             user.qualifications.all()
