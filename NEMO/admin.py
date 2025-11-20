@@ -2423,6 +2423,7 @@ class QualificationLevelAdmin(admin.ModelAdmin):
         "schedule_start_time",
         "schedule_end_time",
         "qualify_weekends",
+        "qualify_closures",
         "fulfill_training_requests",
     )
 

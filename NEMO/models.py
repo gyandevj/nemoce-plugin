@@ -2352,6 +2352,11 @@ class QualificationLevel(SerializationByNameModel):
         default=False,
         help_text="Check this box if the times should apply to weekend days. Default is False, meaning the user won't be qualified on weekends regardless of times.",
     )
+    qualify_closures = models.BooleanField(
+        verbose_name="qualified during closures",
+        default=False,
+        help_text="Check this box to allow the user to be qualified to use/reserve tools even during closures.",
+    )
     fulfill_training_requests = models.BooleanField(
         default=True, help_text="Check this box to fulfill pending training requests upon qualification."
     )
@@ -2369,6 +2374,10 @@ class QualificationLevel(SerializationByNameModel):
         # Not qualified -> not allowed
         if not self.qualify_user:
             return False
+        # Not qualified during closures: check if there is an ongoing one
+        if not self.qualify_closures:
+            if ClosureTime.objects.filter(start_time__lte=requested_time, end_time__gt=requested_time).exists():
+                return False
         # Qualified without schedule -> allowed
         if not self.qualify_schedule:
             return True
@@ -2393,7 +2402,16 @@ class QualificationLevel(SerializationByNameModel):
         return False
 
     def allowed_times_display(self):
-        return f"from {self.schedule_start_time.strftime('%I:%M %p')} to {self.schedule_end_time.strftime('%I:%M %p')} ({'including weekends' if self.qualify_weekends else 'weekdays only'})"
+        result = ""
+        if self.qualify_schedule:
+            result += f"Allowed times are from {self.schedule_start_time.strftime('%I:%M %p')} to {self.schedule_end_time.strftime('%I:%M %p')} ({'including weekends' if self.qualify_weekends else 'weekdays only'})"
+            if self.qualify_closures:
+                result += " and during facility closures."
+            else:
+                result += " but not during facility closures."
+        elif not self.qualify_closures:
+            result += "Reserving/using this tool during facility closures is not allowed."
+        return result
 
     def clean(self):
         if self.qualify_schedule and not self.qualify_user:

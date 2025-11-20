@@ -97,7 +97,7 @@ class NEMOPolicy:
                 return HttpResponseBadRequest("You do not have the qualification level required to operate this tool.")
             elif qualification.qualification_level and not qualification.qualification_level.is_allowed():
                 return HttpResponseBadRequest(
-                    f"You do not have the qualification level required to operate this tool at this time. Allowed times are {qualification.qualification_level.allowed_times_display()}"
+                    f"You do not have the qualification level required to operate this tool at this time. {qualification.qualification_level.allowed_times_display()}"
                 )
 
         # Only staff members can operate a tool on behalf of another user.
@@ -496,11 +496,11 @@ class NEMOPolicy:
                 ):
                     if user == user_creating_reservation:
                         policy_problems.append(
-                            f"You do not have the qualification level required to operate this tool at some point during the reservation window. Allowed times are {qualification.qualification_level.allowed_times_display()}"
+                            f"You do not have the qualification level required to operate this tool at some point during the reservation window. {qualification.qualification_level.allowed_times_display()}"
                         )
                     else:
                         policy_problems.append(
-                            f"{str(user)} does not have the qualification level required to operate this tool at some point during the reservation window. Allowed times are {qualification.qualification_level.allowed_times_display()}"
+                            f"{str(user)} does not have the qualification level required to operate this tool at some point during the reservation window. {qualification.qualification_level.allowed_times_display()}"
                         )
 
         # The user must be authorized on the area in question at the start and end times of the reservation
