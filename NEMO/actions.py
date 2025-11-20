@@ -6,27 +6,33 @@ from django.utils.safestring import mark_safe
 from NEMO.mixins import BillableItemMixin
 from NEMO.models import Area, Configuration, Interlock, InterlockCard, Qualification, Tool, User
 from NEMO.typing import QuerySetType
-from NEMO.utilities import BasicDisplayTable, export_format_datetime, format_datetime, new_model_copy
+from NEMO.utilities import (
+    BasicDisplayTable,
+    export_format_datetime,
+    format_datetime,
+    get_django_default_perm,
+    new_model_copy,
+)
 from NEMO.views.access_requests import access_csv_export
 from NEMO.views.adjustment_requests import adjustments_csv_export
 from NEMO.views.shadowing_verification import shadowing_verification_requests_csv_export
 
 
-@admin.action(description="Disable selected cards")
+@admin.action(description="Disable selected cards", permissions=["change"])
 def disable_selected_cards(model_admin, request, queryset: QuerySetType[InterlockCard]):
     for interlock_card in queryset:
         interlock_card.enabled = False
         interlock_card.save(update_fields=["enabled"])
 
 
-@admin.action(description="Enable selected cards")
+@admin.action(description="Enable selected cards", permissions=["change"])
 def enable_selected_cards(model_admin, request, queryset: QuerySetType[InterlockCard]):
     for interlock_card in queryset:
         interlock_card.enabled = True
         interlock_card.save(update_fields=["enabled"])
 
 
-@admin.action(description="Lock selected interlocks")
+@admin.action(description="Lock selected interlocks", permissions=["change"])
 def lock_selected_interlocks(model_admin, request, queryset):
     for interlock in queryset:
         try:
@@ -39,7 +45,7 @@ def lock_selected_interlocks(model_admin, request, queryset):
             messages.error(request, f"{interlock} could not be locked due to the following error: {str(error)}")
 
 
-@admin.action(description="Unlock selected interlocks")
+@admin.action(description="Unlock selected interlocks", permissions=["change"])
 def unlock_selected_interlocks(model_admin, request, queryset):
     for interlock in queryset:
         try:
@@ -52,7 +58,7 @@ def unlock_selected_interlocks(model_admin, request, queryset):
             messages.error(request, f"{interlock} could not be unlocked due to the following error: {str(error)}")
 
 
-@admin.action(description="Synchronize selected interlocks with tool usage")
+@admin.action(description="Synchronize selected interlocks with tool usage", permissions=["change"])
 def synchronize_with_tool_usage(model_admin, request, queryset):
     for interlock in queryset:
         # Ignore interlocks with no tool assigned, and ignore interlocks connected to doors
@@ -66,6 +72,8 @@ def synchronize_with_tool_usage(model_admin, request, queryset):
 
 @admin.action(description="Create next interlock")
 def create_next_interlock(model_admin, request, queryset):
+    if not has_perm(request, queryset, "add") or not has_perm(request, queryset, "change"):
+        model_admin.message_user(request, "You do not have permission to run this action.", level=messages.ERROR)
     for interlock in queryset:
         new_interlock = Interlock()
         new_interlock.card = interlock.card
@@ -75,7 +83,7 @@ def create_next_interlock(model_admin, request, queryset):
         new_interlock.save()
 
 
-@admin.action(description="Generate CSV status report for selected interlocks")
+@admin.action(description="Generate CSV status report for selected interlocks", permissions=["view"])
 def csv_interlock_status_report(model_admin, request, queryset: QuerySetType[Interlock]):
     from NEMO.interlocks import get_interlock_report
 
@@ -86,6 +94,8 @@ def csv_interlock_status_report(model_admin, request, queryset: QuerySetType[Int
 
 @admin.action(description="Duplicate selected tool configuration")
 def duplicate_tool_configuration(model_admin, request, queryset):
+    if not has_perm(request, queryset, "add") or not has_perm(request, queryset, "change"):
+        model_admin.message_user(request, "You do not have permission to run this action.", level=messages.ERROR)
     for tool in queryset:
         original_name = tool.name
         new_name = "Copy of " + tool.name
@@ -143,33 +153,35 @@ def duplicate_tool_configuration(model_admin, request, queryset):
             )
 
 
-@admin.action(description="Rebuild area tree")
+@admin.action(description="Rebuild area tree", permissions=["change"])
 def rebuild_area_tree(model_admin, request, queryset):
     Area.objects.rebuild()
 
 
-@admin.action(description="Export selected adjustment requests in CSV")
+@admin.action(description="Export selected adjustment requests in CSV", permissions=["view"])
 def adjustment_requests_export_csv(modeladmin, request, queryset):
     return adjustments_csv_export(queryset.all())
 
 
-@admin.action(description="Mark selected adjustment requests as applied")
+@admin.action(description="Mark selected adjustment requests as applied", permissions=["change"])
 def adjustment_requests_mark_as_applied(modeladmin, request, queryset):
     return queryset.update(applied=True, applied_by=request.user)
 
 
-@admin.action(description="Export selected access requests in CSV")
+@admin.action(description="Export selected access requests in CSV", permissions=["view"])
 def access_requests_export_csv(modeladmin, request, queryset):
     return access_csv_export(queryset.all())
 
 
-@admin.action(description="Export selected shadowing verification requests in CSV")
+@admin.action(description="Export selected shadowing verification requests in CSV", permissions=["view"])
 def shadowing_verification_requests_export_csv(modeladmin, request, queryset):
     return shadowing_verification_requests_csv_export(queryset.all())
 
 
 @admin.action(description="Duplicate selected configuration")
 def duplicate_configuration(model_admin, request, queryset: QuerySetType[Configuration]):
+    if not has_perm(request, queryset, "add") or not has_perm(request, queryset, "change"):
+        model_admin.message_user(request, "You do not have permission to run this action.", level=messages.ERROR)
     for configuration in queryset:
         original_name = configuration.name
         new_name = "Copy of " + configuration.name
@@ -201,7 +213,7 @@ def duplicate_configuration(model_admin, request, queryset: QuerySetType[Configu
             )
 
 
-@admin.action(description="Export selected qualifications in CSV")
+@admin.action(description="Export selected qualifications in CSV", permissions=["view"])
 def export_qualifications_csv(model_admin, request, queryset: QuerySetType[Qualification]):
     qualifications = BasicDisplayTable()
     qualifications.headers = [
@@ -224,8 +236,12 @@ def export_qualifications_csv(model_admin, request, queryset: QuerySetType[Quali
     return qualifications.to_csv_http_response("qualifications_" + export_format_datetime() + ".csv")
 
 
-@admin.action(description="Waive selected charges")
+@admin.action(description="Waive selected charges", permissions=["change"])
 def waive_selected_charges(model_admin, request, queryset: QuerySetType[BillableItemMixin]):
     for charge in queryset:
         charge.waive(request.user)
         messages.success(request, f"{model_admin.model.__name__} #{charge.id} has been successfully waived")
+
+
+def has_perm(request, qs, action) -> bool:
+    return request.user.has_perm(get_django_default_perm(qs.model, action))
