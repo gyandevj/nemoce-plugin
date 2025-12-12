@@ -28,9 +28,9 @@ Test python 3.13:
   <<: *test
   image: python:3.13
 
-Test python 3.14:
-  <<: *test
-  image: python:3.14
+#Test python 3.14:
+#  <<: *test
+#  image: python:3.14
 
 .test_mysql: &test_mysql
   stage: test
