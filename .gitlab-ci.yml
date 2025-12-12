@@ -82,7 +82,7 @@ Test python 3.13 mysql 9.2:
     POSTGRES_PASSWORD: $DATABASE_PASSWORD
   before_script:
     - apt-get update && apt-get install -y postgresql-client
-    - python -m pip install psycopg2-binary
+    - python -m pip install psycopg["binary"]
     - until pg_isready -h "${DATABASE_HOST}" -p "${DATABASE_PORT}" -U "${DATABASE_USER}" --quiet; do echo "Waiting for database..."; sleep 1; done
   script:
     - python -m pip install ./
