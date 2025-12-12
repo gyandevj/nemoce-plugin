@@ -276,6 +276,8 @@ class CustomizationBase(ABC):
 class ApplicationCustomization(CustomizationBase):
     variables = {
         "facility_name": "Facility",
+        "facility_rules_name": "Facility rules tutorial",
+        "facility_rules_required_message": '{% load static %}\n<a href="{% url \'facility_rules\' %}">\n  <div class="well clearfix">\n    <div class="col-lg-2 text-center">\n      <img src="{% static \'icons/caution.png\' %}" alt="Caution image" height="128" width="128">\n    </div>\n    <div class="col-lg-8 text-center">\n      <h2>{{ facility_name }} Rules Tutorial</h2>\n      <p style="text-align: center">\nYou must complete your {{ facility_name }} rules tutorial before you can make reservations or use {{ facility_name }} tools. Click here to begin the tutorial.\n      </p>\n    </div>\n    <div class="col-lg-2 text-center">\n      <img src="{% static \'icons/agreement.png\' %}" alt="Agreement icon" height="128" width="128">\n    </div>\n  </div>\n</a>',
         "site_title": "NEMO-CE",
         "self_log_in": "",
         "self_log_out": "",
@@ -296,6 +298,7 @@ class ApplicationCustomization(CustomizationBase):
         "out_of_time_area_send_to_abuse_email": "enabled",
         "kiosk_message": "<h1>Scan your badge to control tools</h1>",
         "kiosk_numpad_size": "large",
+        "kiosk_consumable_checkout": "",
         "area_access_kiosk_option_login_success": "",
         "area_access_kiosk_option_logout_warning": "",
         "area_access_kiosk_option_already_logged_out": "",
@@ -325,6 +328,7 @@ class ProjectsAccountsCustomization(CustomizationBase):
         "project_allow_pi_manage_users": "",
         "project_allow_transferring_charges": "",
         "project_type_allow_multiple": "",
+        "account_enable_manager_edit_mode": "",
     }
 
     def validate(self, name, value):
@@ -339,6 +343,7 @@ class ProjectsAccountsCustomization(CustomizationBase):
 class UserCustomization(CustomizationBase):
     variables = {
         "default_user_training_not_required": "",
+        "default_user_is_inactive": "",
         "user_type_required": "",
         "user_list_active_only": "",
         "user_access_expiration_reminder_days": "",
@@ -529,7 +534,6 @@ class AdjustmentRequestsCustomization(CustomizationBase):
         "adjustment_requests_title": "Adjustment requests",
         "adjustment_requests_description": "",
         "adjustment_requests_charges_display_number": "10",
-        "adjustment_requests_display_max": "",
         "adjustment_requests_time_limit_interval": "",
         "adjustment_requests_time_limit_frequency": "",
         "adjustment_requests_time_limit_monthly_cycle_day": "",
@@ -676,6 +680,8 @@ class ToolCustomization(CustomizationBase):
         "tool_control_use_for_other": "Use this tool on behalf of another user",
         "tool_control_use_for_other_training": "Use this tool on behalf of another user for training",
         "tool_control_use_for_other_remote": "Use this tool for a remote project",
+        "tool_control_note_show": "",
+        "tool_control_note_copy_reservation": "",
         "tool_qualification_reminder_days": "",
         "tool_qualification_expiration_days": "",
         "tool_qualification_expiration_never_used_days": "",

@@ -38,6 +38,8 @@ from NEMO.models import (
     TaskStatus,
     Tool,
     ToolUsageCounter,
+    ToolUsageQuestionType,
+    ToolUsageQuestions,
     ToolWaitList,
     UsageEvent,
     User,
@@ -67,7 +69,7 @@ from NEMO.views.customization import (
     get_media_file_contents,
 )
 from NEMO.widgets.configuration_editor import ConfigurationEditor
-from NEMO.widgets.dynamic_form import DynamicForm, PostUsageQuestion
+from NEMO.widgets.dynamic_form import PostUsageQuestion
 from NEMO.widgets.item_tree import ItemTree
 
 tool_control_logger = getLogger(__name__)
@@ -127,6 +129,7 @@ def tool_status(request, tool_id):
             tool_credentials = tool.toolcredentials_set.filter(
                 Q(authorized_staff__isnull=True) | Q(authorized_staff__in=[user])
             )
+    post_usage_questions = tool.get_usage_questions(ToolUsageQuestionType.POST)
     dictionary = {
         "tool": tool,
         "tool_credentials": tool_credentials,
@@ -135,8 +138,7 @@ def tool_status(request, tool_id):
         "rendered_configuration_html": tool.configuration_widget(user),
         "mobile": request.device == "mobile",
         "task_statuses": TaskStatus.objects.all(),
-        "pre_usage_questions": DynamicForm(tool.pre_usage_questions).render(tool, "pre_usage_questions"),
-        "post_usage_questions": DynamicForm(tool.post_usage_questions).render(tool, "post_usage_questions"),
+        "post_usage_questions": post_usage_questions.render() if post_usage_questions else "",
         "qualification_levels": qualification_levels,
         "qualifications": qualifications,
         "allow_take_over": ToolCustomization.get_bool("tool_control_allow_take_over"),
@@ -147,7 +149,9 @@ def tool_status(request, tool_id):
         or (user_is_qualified and broadcast_upcoming_reservation == "qualified")
         or broadcast_upcoming_reservation == "all",
         "tool_control_show_task_details": ToolCustomization.get_bool("tool_control_show_task_details"),
-        "has_usage_questions": True if tool.pre_usage_questions or tool.post_usage_questions else False,
+        "show_usage_data_tab": ToolUsageQuestions.objects.filter(enabled=True)
+        .filter(Q(only_for_tools=None) | Q(only_for_tools__in=[tool_id]))
+        .exists(),
         "user_can_see_documents": user.is_any_part_of_staff
         or not ToolCustomization.get_bool("tool_control_show_documents_only_qualified_users")
         or user_is_qualified,
@@ -165,13 +169,6 @@ def tool_status(request, tool_id):
             )
         ),
     }
-    if tool.get_current_usage_event() and ToolCustomization.get_bool(
-        "tool_control_prefill_post_usage_with_pre_usage_answers"
-    ):
-        pre_run_data = tool.get_current_usage_event().pre_run_data_json()
-        dictionary["post_usage_questions"] = DynamicForm(
-            tool.post_usage_questions, initial_data=pre_run_data or None
-        ).render(tool, "post_usage_questions")
 
     current_reservation = Reservation.objects.filter(
         start__lt=timezone.now(),
@@ -184,6 +181,8 @@ def tool_status(request, tool_id):
     ).last()
     if current_reservation:
         dictionary["time_left"] = current_reservation.end
+        if ToolCustomization.get_bool("tool_control_note_copy_reservation"):
+            dictionary["reservation_note"] = current_reservation.note
 
     dictionary["next_reservation"] = (
         Reservation.objects.filter(
@@ -207,7 +206,8 @@ def tool_status(request, tool_id):
 @staff_member_or_tool_staff_required
 @require_GET
 def use_tool_for_other(request):
-    dictionary = {"users": User.objects.filter(is_active=True).exclude(id=request.user.id)}
+    tool_id = get_object_or_404(Tool, id=request.GET.get("tool_id")).id
+    dictionary = {"users": User.objects.filter(is_active=True).exclude(id=request.user.id), "tool_id": tool_id}
     return render(request, "tool_control/use_tool_for_other.html", dictionary)
 
 
@@ -464,12 +464,13 @@ def enable_tool(request, tool_id, user_id, project_id, staff_charge):
     new_usage_event.user = user
     new_usage_event.project = project
     new_usage_event.tool = tool
+    new_usage_event.note = request.POST.get("note") or None
 
     # Collect pre-usage questions and validate them
-    dynamic_form = DynamicForm(tool.pre_usage_questions)
+    dynamic_forms = tool.get_usage_questions(ToolUsageQuestionType.PRE, user, project)
 
     try:
-        new_usage_event.pre_run_data = dynamic_form.extract(request)
+        new_usage_event.pre_run_data = dynamic_forms.extract(request)
     except RequiredUnansweredQuestionsException as e:
         return HttpResponseBadRequest(str(e))
 
@@ -540,7 +541,7 @@ def enable_tool(request, tool_id, user_id, project_id, staff_charge):
         wait_list_entry.update(deleted=True, date_exited=timezone.now())
 
     try:
-        dynamic_form.process_run_data(new_usage_event, new_usage_event.pre_run_data, request)
+        dynamic_forms.process_run_data(new_usage_event, new_usage_event.pre_run_data, request)
     except Exception as e:
         return HttpResponseBadRequest(str(e))
 
@@ -588,33 +589,33 @@ def do_disable(tool, downtime, staff_shortening, bypass_interlock, take_over, re
 
     # End the current usage event for the tool
     current_usage_event.end = timezone.now() + downtime
+    current_usage_event.note = request.POST.get("note") or None
 
     # Collect post-usage questions
-    dynamic_form = DynamicForm(tool.post_usage_questions)
+    dynamic_forms = tool.get_usage_questions(ToolUsageQuestionType.POST)
 
     if take_over:
         try:
-            current_usage_event.run_data = dynamic_form.extract(EmptyHttpRequest())
+            current_usage_event.run_data = dynamic_forms.extract(EmptyHttpRequest())
         except RequiredUnansweredQuestionsException as e:
             current_usage_event.run_data = e.run_data
-            email_managers_required_questions_disable_tool(current_usage_event.operator, tool, e.questions)
+            email_managers_required_questions_disable_tool(
+                current_usage_event, current_usage_event.operator, e.questions
+            )
         current_usage_event.save()
     else:
-        # Handle Post Usage Questions
         try:
-            current_usage_event.run_data = dynamic_form.extract(request)
+            current_usage_event.run_data = dynamic_forms.extract(request)
         except RequiredUnansweredQuestionsException as e:
             if user != current_usage_event.operator and current_usage_event.user != user:
                 # if someone else is forcing somebody off the tool and there are required questions, send an email and proceed
                 current_usage_event.run_data = e.run_data
-                email_managers_required_questions_disable_tool(
-                    current_usage_event.operator, tool, e.questions, disabling_user=user
-                )
+                email_managers_required_questions_disable_tool(current_usage_event, user, e.questions)
             else:
                 return HttpResponseBadRequest(str(e))
-        # Handle Consumables
+
         try:
-            dynamic_form.process_run_data(current_usage_event, current_usage_event.run_data, request)
+            dynamic_forms.process_run_data(current_usage_event, current_usage_event.run_data, request)
         except Exception as e:
             return HttpResponseBadRequest(str(e))
 
@@ -817,6 +818,21 @@ def reset_tool_counter(request, counter_id):
     return redirect("tool_control")
 
 
+@login_required
+@require_GET
+def tool_usage_questions(
+    request, tool_id: int, question_type: str, user_id: int, project_id: int, virtual_inputs: str = None
+):
+    tool = get_object_or_404(Tool, pk=tool_id)
+    project = get_object_or_404(Project, pk=project_id)
+    customer = get_object_or_404(User, pk=user_id)
+    question_type = ToolUsageQuestionType(question_type)
+    virtual_inputs = virtual_inputs == "true"
+    return HttpResponse(
+        tool.get_usage_questions(question_type, customer, project).render(virtual_inputs=virtual_inputs)
+    )
+
+
 def interlock_bypass_allowed(user: User, item):
     return user.is_staff_on_tool(item) or InterlockCustomization.get_bool("allow_bypass_interlock_on_failure")
 
@@ -832,8 +848,10 @@ def interlock_error(action: str, user: User, item=None):
 
 
 def email_managers_required_questions_disable_tool(
-    tool_user: User, tool: Tool, questions: List[PostUsageQuestion], disabling_user: User = None
+    usage_event: UsageEvent, disabling_user: User, questions: List[PostUsageQuestion]
 ):
+    tool = usage_event.tool
+    tool_user = usage_event.operator
     user_office_email = EmailsCustomization.get("user_office_email_address")
     abuse_email_address = EmailsCustomization.get("abuse_email_address")
     message = get_media_file_contents("tool_required_unanswered_questions_email.html")
@@ -848,7 +866,9 @@ def email_managers_required_questions_disable_tool(
         )
         ccs = [email for user in cc_users for email in user.get_emails(EmailNotificationType.BOTH_EMAILS)]
         ccs.append(abuse_email_address)
-        rendered_message = render_email_template(message, {"user": tool_user, "tool": tool, "questions": questions})
+        rendered_message = render_email_template(
+            message, {"user": tool_user, "tool": tool, "questions": questions, "usage_event": usage_event}
+        )
         tos = tool_user.get_emails(EmailNotificationType.BOTH_EMAILS)
         send_mail(
             subject=f"Unanswered post‑usage questions after logoff from the {tool.name}",

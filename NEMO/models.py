@@ -13,16 +13,16 @@ from json import loads
 from logging import getLogger
 from operator import attrgetter
 from re import match
-from typing import Dict, Iterable, List, Optional, Set, Union
+from typing import Dict, Iterable, List, Optional, Set, TYPE_CHECKING, Union
 
 from django.conf import settings
 from django.contrib.auth.models import BaseUserManager, Group, Permission, PermissionsMixin
-from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelation
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
 from django.core.validators import MinValueValidator, validate_comma_separated_integer_list
 from django.db import connections, models, transaction
-from django.db.models import BooleanField, Case, Exists, OuterRef, Q, Value, When
+from django.db.models import BooleanField, Case, Exists, IntegerChoices, OuterRef, Q, Value, When
 from django.db.models.manager import Manager
 from django.db.models.signals import pre_delete
 from django.dispatch import receiver
@@ -30,6 +30,7 @@ from django.template import loader
 from django.template.defaultfilters import linebreaksbr
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.formats import localize_input
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 from mptt.fields import TreeForeignKey, TreeManyToManyField
@@ -56,6 +57,7 @@ from NEMO.utilities import (
     end_of_the_day,
     format_daterange,
     format_datetime,
+    format_timedelta,
     get_chemical_document_filename,
     get_duration_with_off_schedule,
     get_full_url,
@@ -74,6 +76,9 @@ from NEMO.utilities import (
 )
 from NEMO.validators import color_hex_list_validator, color_hex_validator
 from NEMO.widgets.configuration_editor import ConfigurationEditor
+
+if TYPE_CHECKING:
+    from NEMO.widgets.dynamic_form import DynamicForm, MultiDynamicForms
 
 models_logger = getLogger(__name__)
 
@@ -283,21 +288,20 @@ class EmailNotificationType(object):
         return [(choice[0], choice[1]) for choice in cls.Choices if choice[0] not in [cls.OFF, cls.ALTERNATE_EMAIL]]
 
 
-class RequestStatus(object):
-    PENDING = 0
-    APPROVED = 1
-    DENIED = 2
-    EXPIRED = 3
-    Choices = (
-        (PENDING, "Pending"),
-        (APPROVED, "Approved"),
-        (DENIED, "Denied"),
-        (EXPIRED, "Expired"),
-    )
+class RequestStatus(IntegerChoices):
+    PENDING = 0, _("Pending")
+    APPROVED = 1, _("Approved")
+    DENIED = 2, _("Denied")
+    EXPIRED = 3, _("Expired")
 
     @classmethod
     def choices_without_expired(cls):
-        return [(choice[0], choice[1]) for choice in cls.Choices if choice[0] not in [cls.EXPIRED]]
+        return [(choice[0], choice[1]) for choice in cls.choices if choice[0] not in [cls.EXPIRED]]
+
+
+class ToolUsageQuestionType(models.TextChoices):
+    PRE = "pre", _("Pre")
+    POST = "post", _("Post")
 
 
 class UserPreferences(BaseModel):
@@ -436,6 +440,7 @@ class UserPreferences(BaseModel):
         blank=True,
         help_text="Tools to see maintenance records and receive task notifications for. If empty all notifications will be received.",
     )
+    login_redirect_url = models.CharField(null=True, blank=True, max_length=CHAR_FIELD_MEDIUM_LENGTH)
 
     def get_recurring_charges_days(self) -> List[int]:
         return [
@@ -616,7 +621,7 @@ class TemporaryPhysicalAccessRequest(BaseModel):
     start_time = models.DateTimeField(help_text="The requested time for the access to start.")
     end_time = models.DateTimeField(help_text="The requested time for the access to end.")
     other_users = models.ManyToManyField("User", blank=True, help_text="Select the other users requesting access.")
-    status = models.IntegerField(choices=RequestStatus.Choices, default=RequestStatus.PENDING)
+    status = models.IntegerField(choices=RequestStatus.choices, default=RequestStatus.PENDING)
     reviewer = models.ForeignKey(
         "User", null=True, blank=True, related_name="access_requests_reviewed", on_delete=models.CASCADE
     )
@@ -849,6 +854,19 @@ class User(BaseModel, PermissionsMixin):
     managed_projects = models.ManyToManyField(
         "Project", related_name="manager_set", blank=True, help_text="Select the projects that this user is a PI for."
     )
+    managed_accounts = models.ManyToManyField(
+        "Account",
+        related_name="manager_set",
+        blank=True,
+        help_text="Select the accounts that this user is a manager for.",
+    )
+    managed_users = models.ManyToManyField(
+        "self",
+        symmetrical=False,
+        related_name="supervisors",
+        blank=True,
+        help_text="Select the users that this user is managing.",
+    )
 
     # Preferences
     preferences: UserPreferences = models.OneToOneField(UserPreferences, null=True, on_delete=models.SET_NULL)
@@ -876,12 +894,13 @@ class User(BaseModel, PermissionsMixin):
             if username_taken.exists():
                 raise ValidationError({"username": _("This username has already been taken")})
         if self.is_staff and self.is_service_personnel:
+            # Do not add "is_staff" error code here since this can be displayed in regular admin user page
+            # and that page does not have the is_staff field (it's only for detailed admin)
             raise ValidationError(
                 {
-                    "is_staff": _("A user cannot be both staff and service personnel. Please choose one or the other."),
                     "is_service_personnel": _(
                         "A user cannot be both staff and service personnel. Please choose one or the other."
-                    ),
+                    )
                 }
             )
 
@@ -1092,13 +1111,13 @@ class User(BaseModel, PermissionsMixin):
             return access_record.project
 
     def active_project_count(self):
-        return self.active_projects().count()
+        return self.projects.filter(active=True, account__active=True).count()
 
     def active_projects(self):
-        return self.projects.filter(active=True, account__active=True)
+        return self.projects.filter(active=True, account__active=True).prefetch_related("manager_set")
 
     def inactive_projects(self):
-        return self.projects.exclude(active=True, account__active=True)
+        return self.projects.exclude(active=True, account__active=True).prefetch_related("manager_set")
 
     def charging_staff_time(self) -> bool:
         return StaffCharge.objects.filter(staff_member=self.id, end=None).exists()
@@ -1148,7 +1167,7 @@ class User(BaseModel, PermissionsMixin):
             )
             return f'<a href="javascript:;" data-title="{content}" data-placement="bottom" class="contact-info-tooltip info-tooltip-container"><span class="glyphicon glyphicon-send small-icon"></span>{self.get_name()}</a>'
 
-    def managed_users(self) -> List[User]:
+    def managed_project_users(self) -> List[User]:
         bulk_managed_users = User.objects.in_bulk(self.managed_projects.values_list("user", flat=True).distinct())
         bulk_managed_users.pop(self.id, None)
         managed_user_list = list(bulk_managed_users.values())
@@ -1203,6 +1222,22 @@ class UserDocuments(BaseDocumentModel):
         verbose_name_plural = "User documents"
 
 
+class UserCalendarToolList(BaseModel):
+    name = models.CharField(max_length=CHAR_FIELD_MEDIUM_LENGTH, help_text=_("The name of the list of calendar tools"))
+    user = models.ForeignKey(User, help_text=_("The user this list is for"), on_delete=models.CASCADE)
+    tools = models.ManyToManyField("Tool", blank=False, help_text=_("The comma-separated list of tool ids"))
+
+    def get_tool_ids(self) -> List[int]:
+        return list(self.tools.values_list("id", flat=True))
+
+    def __str__(self):
+        return f"{self.name} ({self.user.username})"
+
+    class Meta:
+        ordering = ["user", "name"]
+        unique_together = ["user", "name"]
+
+
 class Tool(SerializationByNameModel):
     class OperationMode(object):
         REGULAR = 0
@@ -1218,6 +1253,7 @@ class Tool(SerializationByNameModel):
         blank=True,
         help_text="Select a parent tool to allow alternate usage",
         on_delete=models.CASCADE,
+        limit_choices_to={"parent_tool__isnull": True},
     )
     visible = models.BooleanField(default=True, help_text="Specifies whether this tool is visible to users.")
     _description = models.TextField(
@@ -1251,6 +1287,11 @@ class Tool(SerializationByNameModel):
         default=False,
         help_text="Marking the tool non-operational will prevent users from using the tool.",
     )
+    _problem_shutdown_enabled = models.BooleanField(
+        db_column="problem_shutdown_enabled",
+        default=True,
+        help_text="Whether or not users can shut down the tool when reporting a problem.",
+    )
     _properties = fields.JsonField(
         schema=load_properties_schemas("Tool"), db_column="properties", null=True, blank=True
     )
@@ -1280,10 +1321,11 @@ class Tool(SerializationByNameModel):
     )
     _staff = models.ManyToManyField(
         User,
+        verbose_name="Act as staff",
         db_table="NEMO_tool_staff",
         blank=True,
         related_name="staff_for_tools",
-        help_text="Users who can act as staff for this tool..",
+        help_text="Users who can act as staff for this tool.",
     )
     _adjustment_request_reviewers = models.ManyToManyField(
         User,
@@ -1319,6 +1361,14 @@ class Tool(SerializationByNameModel):
         blank=True,
         help_text="Indicates that this tool is physically located in a billable area and requires an active area access record in order to be operated.",
         on_delete=models.PROTECT,
+    )
+    _requires_area_occupancy_minimum = models.PositiveIntegerField(
+        db_column="requires_area_occupancy_minimum",
+        null=True,
+        blank=True,
+        help_text=_(
+            "Enter the minimum number of total users needed to be present in the required area to enable this tool"
+        ),
     )
     _ask_to_leave_area_when_done_using = models.BooleanField(
         default=False,
@@ -1410,18 +1460,6 @@ class Tool(SerializationByNameModel):
         default=False,
         help_text="Require that users have a current (within 15 minutes) reservation in order to use the tool",
     )
-    _pre_usage_questions = models.TextField(
-        db_column="pre_usage_questions",
-        null=True,
-        blank=True,
-        help_text="Before using a tool, questions can be asked. This field will only accept JSON format",
-    )
-    _post_usage_questions = models.TextField(
-        db_column="post_usage_questions",
-        null=True,
-        blank=True,
-        help_text="Upon logging off a tool, questions can be asked such as how much consumables were used by the user. This field will only accept JSON format",
-    )
     _policy_off_between_times = models.BooleanField(
         db_column="policy_off_between_times",
         default=False,
@@ -1465,6 +1503,12 @@ class Tool(SerializationByNameModel):
         blank=True,
         related_name="shadowing_verification_reviewer_on_tools",
         help_text="Users who can approve/deny shadowing verification for this tool. Defaults to facility managers if left blank.",
+    )
+    _abuse_weight = models.IntegerField(
+        default=1,
+        verbose_name="Reservation abuse weight",
+        db_column="abuse_weight",
+        help_text="The weight to give this tool in the reservation abuse calculations",
     )
 
     class Meta:
@@ -1525,6 +1569,15 @@ class Tool(SerializationByNameModel):
     def operational(self, value):
         self.raise_setter_error_if_child_tool("operational")
         self._operational = value
+
+    @property
+    def problem_shutdown_enabled(self):
+        return self.parent_tool.problem_shutdown_enabled if self.is_child_tool() else self._problem_shutdown_enabled
+
+    @problem_shutdown_enabled.setter
+    def problem_shutdown_enabled(self, value):
+        self.raise_setter_error_if_child_tool("problem_shutdown_enabled")
+        self._problem_shutdown_enabled = value
 
     @property
     def properties(self):
@@ -1637,6 +1690,19 @@ class Tool(SerializationByNameModel):
     def requires_area_access(self, value):
         self.raise_setter_error_if_child_tool("requires_area_access")
         self._requires_area_access = value
+
+    @property
+    def requires_area_occupancy_minimum(self):
+        return (
+            self.parent_tool.requires_area_occupancy_minimum
+            if self.is_child_tool()
+            else self._requires_area_occupancy_minimum
+        )
+
+    @requires_area_occupancy_minimum.setter
+    def requires_area_occupancy_minimum(self, value):
+        self.raise_setter_error_if_child_tool("requires_area_occupancy_minimum")
+        self._requires_area_occupancy_minimum = value
 
     @property
     def ask_to_leave_area_when_done_using(self):
@@ -1808,24 +1874,6 @@ class Tool(SerializationByNameModel):
         self._reservation_required = value
 
     @property
-    def pre_usage_questions(self):
-        return self.parent_tool.pre_usage_questions if self.is_child_tool() else self._pre_usage_questions
-
-    @pre_usage_questions.setter
-    def pre_usage_questions(self, value):
-        self.raise_setter_error_if_child_tool("pre_usage_questions")
-        self._pre_usage_questions = value
-
-    @property
-    def post_usage_questions(self):
-        return self.parent_tool.post_usage_questions if self.is_child_tool() else self._post_usage_questions
-
-    @post_usage_questions.setter
-    def post_usage_questions(self, value):
-        self.raise_setter_error_if_child_tool("post_usage_questions")
-        self._post_usage_questions = value
-
-    @property
     def policy_off_between_times(self):
         return self.parent_tool.policy_off_between_times if self.is_child_tool() else self._policy_off_between_times
 
@@ -1878,6 +1926,15 @@ class Tool(SerializationByNameModel):
     def operation_mode(self, value):
         self.raise_setter_error_if_child_tool("operation_mode")
         self._operation_mode = value
+
+    @property
+    def abuse_weight(self):
+        return self.parent_tool.abuse_weight if self.is_child_tool() else self._abuse_weight
+
+    @abuse_weight.setter
+    def abuse_weight(self, value):
+        self.raise_setter_error_if_child_tool("abuse_weight")
+        self._abuse_weight = value
 
     def allow_wait_list(self):
         return self.operation_mode in [self.OperationMode.WAIT_LIST, self.OperationMode.HYBRID]
@@ -1955,7 +2012,7 @@ class Tool(SerializationByNameModel):
     def tool_or_parent_id(self):
         """This method returns the tool id or the parent tool id if tool is a child"""
         if self.is_child_tool():
-            return self.parent_tool.id
+            return self.parent_tool_id
         else:
             return self.id
 
@@ -1964,7 +2021,7 @@ class Tool(SerializationByNameModel):
         tool_ids = list(self.tool_children_set.values_list("id", flat=True))
         # parent tool
         if self.is_child_tool():
-            tool_ids.append(self.parent_tool.id)
+            tool_ids.append(self.parent_tool_id)
         # self
         tool_ids.append(self.id)
         return tool_ids
@@ -2184,7 +2241,7 @@ class Tool(SerializationByNameModel):
             results["sufficient_notice"] = start - timedelta(hours=notice_limit) >= timezone.now()
         return results
 
-    def configuration_widget(self, user, render_as_form=None, filter_for_agenda=False):
+    def configuration_widget(self, user, render_as_form=None, filter_for_agenda=False, url=None):
         configurations = self.current_ordered_configurations()
         if filter_for_agenda:
             configurations = [
@@ -2195,7 +2252,7 @@ class Tool(SerializationByNameModel):
             "user": user,
             "render_as_form": render_as_form,
         }
-        configurations_editor = ConfigurationEditor()
+        configurations_editor = ConfigurationEditor(url=url)
         return configurations_editor.render(None, config_input)
 
     def current_ordered_configurations(self):
@@ -2251,44 +2308,85 @@ class Tool(SerializationByNameModel):
             Q(primary_tool_owner__in=[self]) | Q(backup_for_tools__in=[self]) | Q(superuser_for_tools__in=[self])
         )
 
+    def get_reservation_questions(self, project: Project = None) -> MultiDynamicForms:
+        from NEMO.widgets.dynamic_form import MultiDynamicForms
+
+        reservation_questions = ReservationQuestions.objects.filter(enabled=True)
+        reservation_questions = reservation_questions.filter(tool_reservations=True)
+        reservation_questions = reservation_questions.filter(
+            Q(only_for_tools=None) | Q(only_for_tools__in=[self.tool_or_parent_id()])
+        )
+        if project:
+            reservation_questions = reservation_questions.filter(
+                Q(only_for_projects=None) | Q(only_for_projects__in=[project.id])
+            )
+        else:
+            reservation_questions = reservation_questions.filter(only_for_projects=None)
+        return MultiDynamicForms(reservation_questions)
+
+    def _get_usage_questions(self, questions_type: str, user: User, project: Project) -> QuerySetType:
+        real_id = self.tool_or_parent_id()
+        tool_questions = ToolUsageQuestions.objects.filter(enabled=True, questions_type=questions_type)
+        tool_questions = tool_questions.filter(Q(only_for_tools=None) | Q(only_for_tools__in=[real_id]))
+        tool_questions = tool_questions.filter(Q(only_for_projects=None) | Q(only_for_projects__in=[project.id]))
+        tool_questions = tool_questions.filter(Q(only_for_users=None) | Q(only_for_users__in=[user.id]))
+        tool_questions = tool_questions.filter(Q(only_for_groups=None) | Q(only_for_groups__in=user.groups.all()))
+        return tool_questions
+
+    def get_usage_questions(
+        self, questions_type: ToolUsageQuestionType, user: User = None, project: Project = None
+    ) -> MultiDynamicForms:
+        from NEMO.widgets.dynamic_form import MultiDynamicForms
+        from NEMO.views.customization import ToolCustomization
+
+        is_post_usage = questions_type == ToolUsageQuestionType.POST
+        initial_data = None
+        if is_post_usage:
+            current_usage = self.get_current_usage_event()
+            if current_usage:
+                if ToolCustomization.get_bool("tool_control_prefill_post_usage_with_pre_usage_answers"):
+                    initial_data = current_usage.pre_run_data_json()
+                project = current_usage.project
+                user = current_usage.user
+            elif not project or not user:
+                return None
+        if project and user:
+            return MultiDynamicForms(
+                self._get_usage_questions(questions_type, user, project), initial_data=initial_data
+            )
+        else:
+            raise ValueError(f"A {'project' if user else 'user'} must be provided for usage questions")
+
     def clean(self):
         errors = {}
         if self.parent_tool_id:
             if self.parent_tool_id == self.id:
-                errors["parent_tool"] = "You cannot select the parent to be the tool itself."
+                errors["parent_tool"] = _("You cannot select the parent to be the tool itself.")
         else:
             from NEMO.views.customization import ToolCustomization
-            from NEMO.widgets.dynamic_form import validate_dynamic_form_model
 
             if not self._category:
-                errors["_category"] = "This field is required."
+                errors["_category"] = _("This field is required.")
             if not self._location and ToolCustomization.get_bool("tool_location_required"):
-                errors["_location"] = "This field is required."
+                errors["_location"] = _("This field is required.")
             if not self._phone_number and ToolCustomization.get_bool("tool_phone_number_required"):
-                errors["_phone_number"] = "This field is required."
+                errors["_phone_number"] = _("This field is required.")
             if not self._primary_owner_id:
-                errors["_primary_owner"] = "This field is required."
-
-            # Validate _pre_usage_questions JSON format
-            if self._pre_usage_questions:
-                dynamic_form_errors = validate_dynamic_form_model(
-                    self._pre_usage_questions, self, "_pre_usage_questions"
-                )
-                if dynamic_form_errors:
-                    errors["_pre_usage_questions"] = dynamic_form_errors
-            # Validate _post_usage_questions JSON format
-            if self._post_usage_questions:
-                dynamic_form_errors = validate_dynamic_form_model(
-                    self._post_usage_questions, self, "_post_usage_questions"
-                )
-                if dynamic_form_errors:
-                    errors["_post_usage_questions"] = dynamic_form_errors
+                errors["_primary_owner"] = _("This field is required.")
 
             if self._policy_off_between_times and (not self._policy_off_start_time or not self._policy_off_end_time):
                 if not self._policy_off_start_time:
-                    errors["_policy_off_start_time"] = "Start time must be specified"
+                    errors["_policy_off_start_time"] = _("Start time must be specified")
                 if not self._policy_off_end_time:
-                    errors["_policy_off_end_time"] = "End time must be specified"
+                    errors["_policy_off_end_time"] = _("End time must be specified")
+
+            if self._requires_area_occupancy_minimum and not self._requires_area_access_id:
+                errors["_requires_area_access"] = _(
+                    "You cannot have a minimum occupancy without requiring an active access record to that area"
+                )
+                errors["_requires_area_occupancy_minimum"] = _(
+                    "You cannot have a minimum occupancy without requiring an active access record to that area"
+                )
         if errors:
             raise ValidationError(errors)
 
@@ -2298,6 +2396,59 @@ class Tool(SerializationByNameModel):
             fresh_tool = Tool(id=self.id, parent_tool=self.parent_tool, name=self.name, visible=False)
             self.__dict__.update(fresh_tool.__dict__)
         super().save(force_insert, force_update, using, update_fields)
+
+
+class ToolUsageQuestions(models.Model):
+    enabled = models.BooleanField(default=True)
+    display_order = models.PositiveIntegerField(
+        default=1,
+        help_text="The order in which these questions will be displayed. Can be any positive integer including 0. Lower values are displayed first.",
+    )
+    name = models.CharField(
+        max_length=CHAR_FIELD_MEDIUM_LENGTH,
+        help_text=_("The name for these tool usage questions"),
+    )
+    only_for_tools = models.ManyToManyField(
+        Tool,
+        blank=True,
+        limit_choices_to={"parent_tool__isnull": True},
+        help_text=_("Select the tools these questions only apply to. Leave blank for all tools"),
+    )
+    only_for_projects = models.ManyToManyField(
+        "Project",
+        blank=True,
+        help_text=_("Select the projects these questions only apply to. Leave blank for all projects"),
+    )
+    only_for_users = models.ManyToManyField(
+        User, blank=True, help_text=_("Select the users these questions only apply to. Leave blank for all users")
+    )
+    only_for_groups = models.ManyToManyField(
+        Group,
+        blank=True,
+        help_text=_("Select the user groups these questions only apply to. Leave blank for all users"),
+    )
+    questions_type = models.CharField(
+        max_length=10,
+        choices=ToolUsageQuestionType.choices,
+        help_text=_("Should this question be asked before or after tool usage?"),
+    )
+    questions = models.TextField(help_text=_("This field will only accept JSON format"))
+
+    def clean(self):
+        from NEMO.widgets.dynamic_form import validate_dynamic_form_model
+
+        # Validate questions JSON format
+        if self.questions:
+            dynamic_form_errors = validate_dynamic_form_model(self.questions, self, "questions")
+            if dynamic_form_errors:
+                raise ValidationError({"questions": dynamic_form_errors})
+
+    def __str__(self):
+        return self.name or f"{self.get_questions_type_display()} usage question #{self.id}"
+
+    class Meta:
+        verbose_name_plural = "Tool usage questions"
+        ordering = ["questions_type", "display_order"]
 
 
 class ToolWaitList(BaseModel):
@@ -3217,6 +3368,12 @@ class Area(MPTTModel):
         help_text="Whether or not policy rules should be enforced on weekends",
     )
 
+    abuse_weight = models.IntegerField(
+        default=1,
+        verbose_name="Reservation abuse weight",
+        help_text="The weight to give this area in the reservation abuse calculations",
+    )
+
     class MPTTMeta:
         parent_attr = "parent_area"
 
@@ -3325,6 +3482,20 @@ class Area(MPTTModel):
             email for area in self.get_ancestors(ascending=True, include_self=True) for email in area.reservation_email
         ]
 
+    def get_reservation_questions(self, project: Project = None) -> MultiDynamicForms:
+        from NEMO.widgets.dynamic_form import MultiDynamicForms
+
+        reservation_questions = ReservationQuestions.objects.filter(enabled=True)
+        reservation_questions = reservation_questions.filter(area_reservations=True)
+        reservation_questions = reservation_questions.filter(Q(only_for_areas=None) | Q(only_for_areas__in=[self.id]))
+        if project:
+            reservation_questions = reservation_questions.filter(
+                Q(only_for_projects=None) | Q(only_for_projects__in=[project.id])
+            )
+        else:
+            reservation_questions = reservation_questions.filter(only_for_projects=None)
+        return MultiDynamicForms(reservation_questions)
+
 
 class AreaAccessRecord(BaseModel, CalendarDisplayMixin, BillableItemMixin):
     area = TreeForeignKey(Area, on_delete=models.CASCADE)
@@ -3398,6 +3569,7 @@ class AccountType(BaseCategory):
 
 class Account(SerializationByNameModel):
     name = models.CharField(max_length=CHAR_FIELD_SMALL_LENGTH, unique=True)
+    note = models.TextField(null=True, blank=True)
     type = models.ForeignKey(AccountType, null=True, blank=True, on_delete=models.SET_NULL)
     start_date = models.DateField(null=True, blank=True)
     active = models.BooleanField(
@@ -3408,11 +3580,18 @@ class Account(SerializationByNameModel):
     class Meta:
         ordering = ["name"]
 
+    def project_manager_ids_not_account_managers(self):
+        account_manager_ids = distinct_qs_value_list(self.manager_set, "id")
+        project_manager_ids = distinct_qs_value_list(self.project_set, "manager_set__id")
+        return [
+            manager_id for manager_id in project_manager_ids if manager_id and manager_id not in account_manager_ids
+        ]
+
     def sorted_active_projects(self):
-        return self.sorted_projects().filter(active=True)
+        return self.sorted_projects().filter(active=True).prefetch_related("project_types", "manager_set")
 
     def sorted_projects(self):
-        return self.project_set.all().order_by("-active", "name")
+        return self.project_set.prefetch_related("project_types", "manager_set").order_by("-active", "name")
 
     def display_with_status(self):
         return f"{'[INACTIVE] ' if not self.active else ''}{self.name}"
@@ -3452,9 +3631,9 @@ class Project(SerializationByNameModel):
     def display_with_pis(self):
         from NEMO.templatetags.custom_tags_and_filters import project_selection_display
 
-        pis = ", ".join([pi.get_name() for pi in self.manager_set.all()])
-        pis = f" (PI{'s' if self.manager_set.count() > 1 else ''}: {pis})" if pis else ""
-        return f"{project_selection_display(self)}{pis}"
+        managers = ", ".join([manager.get_name() for manager in self.manager_set.all()])
+        managers = f" (PI{'s' if self.manager_set.count() > 1 else ''}: {managers})" if managers else ""
+        return f"{project_selection_display(self)}{managers}"
 
     def display_with_status(self):
         return f"{'[INACTIVE] ' if not self.active else ''}{self.name}"
@@ -3549,6 +3728,7 @@ class Reservation(BaseModel, CalendarDisplayMixin, BillableItemMixin):
         max_length=CHAR_FIELD_MEDIUM_LENGTH,
         help_text="Shows a custom title for this reservation on the calendar. Leave this field blank to display the reservation's user name as the title (which is the default behaviour).",
     )
+    note = models.TextField(null=True, blank=True)
     question_data = models.TextField(null=True, blank=True)
     validated = models.BooleanField(default=False)
     validated_by = models.ForeignKey(
@@ -3657,7 +3837,7 @@ class Reservation(BaseModel, CalendarDisplayMixin, BillableItemMixin):
     def question_data_json(self):
         return loads(self.question_data) if self.question_data else None
 
-    def copy(self, new_start: datetime = None, new_end: datetime = None):
+    def copy(self, new_start: datetime.datetime = None, new_end: datetime.datetime = None):
         self._tool_accessories = self.tool_accessories.all()
         new_reservation = new_model_copy(self)
         if new_start:
@@ -3691,7 +3871,7 @@ class Reservation(BaseModel, CalendarDisplayMixin, BillableItemMixin):
 
 class ReservationQuestions(BaseModel):
     enabled = models.BooleanField(default=True)
-    name = models.CharField(max_length=CHAR_FIELD_SMALL_LENGTH, help_text="The name of this ")
+    name = models.CharField(max_length=CHAR_FIELD_SMALL_LENGTH, help_text="The name of these reservation questions")
     questions = models.TextField(
         help_text="Upon making a reservation, the user will be asked these questions. This field will only accept JSON format"
     )
@@ -3711,6 +3891,15 @@ class ReservationQuestions(BaseModel):
         Project, blank=True, help_text="Select the projects these questions only apply to. Leave blank for all projects"
     )
 
+    def clean(self):
+        from NEMO.widgets.dynamic_form import validate_dynamic_form_model
+
+        # Validate questions JSON format
+        if self.questions:
+            dynamic_form_errors = validate_dynamic_form_model(self.questions, self, "questions")
+            if dynamic_form_errors:
+                raise ValidationError({"questions": dynamic_form_errors})
+
     class Meta:
         ordering = ["name"]
         verbose_name_plural = "Reservation questions"
@@ -3729,6 +3918,7 @@ class UsageEvent(BaseModel, CalendarDisplayMixin, BillableItemMixin):
     start = models.DateTimeField(default=timezone.now)
     end = models.DateTimeField(null=True, blank=True)
     has_ended = models.PositiveBigIntegerField(default=0)
+    note = models.TextField(null=True, blank=True)
     validated = models.BooleanField(default=False)
     validated_by = models.ForeignKey(
         User, null=True, blank=True, related_name="usage_event_validated_set", on_delete=models.CASCADE
@@ -5115,7 +5305,12 @@ class ToolUsageCounter(BaseModel):
     value = models.FloatField(help_text=_("The current value of this counter"))
     default_value = models.FloatField(help_text=_("The default value to reset this counter to"))
     counter_direction = models.IntegerField(default=CounterDirection.INCREMENT, choices=CounterDirection.Choices)
-    tool = models.ForeignKey(Tool, help_text=_("The tool this counter is for."), on_delete=models.CASCADE)
+    tool = models.ForeignKey(
+        Tool,
+        help_text=_("The tool this counter is for."),
+        on_delete=models.CASCADE,
+        limit_choices_to={"parent_tool__isnull": True},
+    )
     tool_pre_usage_question = models.CharField(
         null=True,
         blank=True,
@@ -5189,6 +5384,8 @@ class ToolUsageCounter(BaseModel):
         return User.objects.filter(Q(is_active=True) & user_filter).distinct()
 
     def clean(self):
+        from NEMO.widgets.dynamic_form import MultiDynamicForms
+
         errors = {}
         if self.warning_threshold:
             effective_warning_threshold = self.counter_direction * self.warning_threshold
@@ -5212,8 +5409,44 @@ class ToolUsageCounter(BaseModel):
                     ),
                 }
             )
+        if self.tool_id:
+            for question_type in ["pre", "post"]:
+                question_name = f"tool_{question_type}_usage_question"
+                question_data_name = getattr(self, question_name)
+                tool_questions = ToolUsageQuestions.objects.filter(enabled=True, questions_type=question_type).filter(
+                    Q(only_for_tools=None) | Q(only_for_tools__in=[self.tool_or_parent_id()])
+                )
+                dynamic_form = MultiDynamicForms(tool_questions).merged_dynamic_forms
+                error = self.clean_counter_question(dynamic_form, question_data_name, question_type)
+                if error:
+                    errors[question_name] = error
         if errors:
             raise ValidationError(errors)
+
+    @staticmethod
+    def clean_counter_question(dynamic_form: DynamicForm, counter_question_name: str, pre_post: str) -> Optional[str]:
+        from NEMO.widgets.dynamic_form import PostUsageNumberFieldQuestion, PostUsageFloatFieldQuestion
+
+        error = None
+        if counter_question_name:
+            if dynamic_form:
+                candidate_questions = []
+                candidate_questions.extend(
+                    dynamic_form.filter_questions(
+                        lambda x: isinstance(x, (PostUsageNumberFieldQuestion, PostUsageFloatFieldQuestion))
+                    )
+                )
+                matching_tool_question = any(
+                    question for question in candidate_questions if question.name == counter_question_name
+                )
+                if not matching_tool_question:
+                    candidates = {question.name for question in candidate_questions}
+                    error = f"The tool has no {pre_post} usage question of type Number or Float with this name."
+                    if candidates:
+                        error += f" Valid question names are: {', '.join(candidates)}"
+            else:
+                error = f"The tool does not have any {pre_post} usage questions."
+        return error
 
     def __str__(self):
         return str(self.name)
@@ -5262,18 +5495,15 @@ class BuddyRequest(BaseModel):
     deleted = models.BooleanField(
         default=False, help_text="Indicates the request has been deleted and won't be shown anymore."
     )
+    replies = GenericRelation("RequestMessage")
 
     @property
     def creator(self) -> User:
         return self.user
 
-    @property
-    def replies(self) -> QuerySetType[RequestMessage]:
-        return RequestMessage.objects.filter(object_id=self.id, content_type=ContentType.objects.get_for_model(self))
-
     def creator_and_reply_users(self) -> List[User]:
         result = {self.user}
-        for reply in self.replies:
+        for reply in self.replies.all():
             result.add(reply.author)
         return list(result)
 
@@ -5293,6 +5523,7 @@ class StaffAssistanceRequest(BaseModel):
     deleted = models.BooleanField(
         default=False, help_text="Indicates the request has been deleted and won't be shown anymore."
     )
+    replies = GenericRelation("RequestMessage")
 
     class Meta:
         ordering = ["-creation_time"]
@@ -5301,13 +5532,9 @@ class StaffAssistanceRequest(BaseModel):
     def creator(self) -> User:
         return self.user
 
-    @property
-    def replies(self) -> QuerySetType[RequestMessage]:
-        return RequestMessage.objects.filter(object_id=self.id, content_type=ContentType.objects.get_for_model(self))
-
     def creator_and_reply_users(self) -> List[User]:
         result = {self.user}
-        for reply in self.replies:
+        for reply in self.replies.all():
             result.add(reply.author)
         return list(result)
 
@@ -5336,9 +5563,18 @@ class AdjustmentRequest(BaseModel):
         blank=True,
         help_text="A manager's note to send to the user when a request is denied or to the user office when it is approved.",
     )
+    item_tool = models.ForeignKey(Tool, null=True, blank=True, on_delete=models.SET_NULL)
+    item_area = models.ForeignKey(Area, null=True, blank=True, on_delete=models.SET_NULL)
+    original_start = models.DateTimeField(null=True, blank=True)
+    original_end = models.DateTimeField(null=True, blank=True)
+    original_quantity = models.PositiveIntegerField(null=True, blank=True)
+    original_project = models.ForeignKey(
+        Project, null=True, blank=True, related_name="original_adjustmentrequest_set", on_delete=models.CASCADE
+    )
     new_start = models.DateTimeField(null=True, blank=True)
     new_end = models.DateTimeField(null=True, blank=True)
     new_quantity = models.PositiveIntegerField(null=True, blank=True)
+    new_project = models.ForeignKey(Project, null=True, blank=True, on_delete=models.CASCADE)
     waive = models.BooleanField(default=False)
     status = models.IntegerField(choices=RequestStatus.choices_without_expired(), default=RequestStatus.PENDING)
     reviewer = models.ForeignKey(
@@ -5351,70 +5587,148 @@ class AdjustmentRequest(BaseModel):
     deleted = models.BooleanField(
         default=False, help_text="Indicates the request has been deleted and won't be shown anymore."
     )
+    replies = GenericRelation("RequestMessage")
 
-    @property
-    def replies(self) -> QuerySetType[RequestMessage]:
-        return RequestMessage.objects.filter(object_id=self.id, content_type=ContentType.objects.get_for_model(self))
-
-    def get_new_start(self) -> Optional[datetime]:
-        # Returns the new start if different from the item's start (not counting seconds and microseconds)
-        return (
-            self.new_start
-            if self.new_start
-            and self.item
-            and self.item.start
-            and self.item.start.replace(microsecond=0, second=0) != self.new_start
-            else None
-        )
-
-    def get_new_end(self) -> Optional[datetime]:
-        # Returns the new end if different from the item's end (not counting seconds and microseconds)
-        return (
-            self.new_end
-            if self.new_end
-            and self.item
-            and self.item.end
-            and self.item.end.replace(microsecond=0, second=0) != self.new_end
-            else None
-        )
-
-    def get_quantity_difference(self) -> int:
-        if self.item and self.new_quantity is not None:
-            return self.new_quantity - self.item.quantity
-
-    def get_time_difference(self) -> str:
-        if self.item and self.new_start and self.new_end:
-            previous_duration = self.item.end.replace(microsecond=0, second=0) - self.item.start.replace(
-                microsecond=0, second=0
-            )
-            new_duration = self.new_end - self.new_start
-            return (
-                f"+{(new_duration - previous_duration)}"
-                if new_duration >= previous_duration
-                else f"- {(previous_duration - new_duration)}"
-            )
-
-    def get_difference(self):
-        if self.waive:
-            return "Waived" if self.item and self.item.waived else "Waive requested"
+    def get_original_start(self) -> Optional[datetime.datetime]:
+        # if the request has been applied already, our only luck is the original
+        if self.applied:
+            return self.original_start
         else:
-            return (self.get_time_difference() or self.get_quantity_difference()) if self.item else ""
+            # otherwise we can use the item start
+            return self.original_start or getattr(getattr(self, "item", None), "start", None)
 
-    def adjustable_charge(self):
+    def get_original_end(self) -> Optional[datetime.datetime]:
+        # if the request has been applied already, our only luck is the original
+        if self.applied:
+            return self.original_end
+        else:
+            # otherwise we can use the item end
+            return self.original_end or getattr(getattr(self, "item", None), "end", None)
+
+    def get_original_quantity(self) -> Optional[int]:
+        # if the request has been applied already, our only luck is the original
+        if self.applied:
+            return self.original_quantity
+        else:
+            # otherwise we can use the item quantity
+            return self.original_quantity or getattr(getattr(self, "item", None), "quantity", None)
+
+    def get_original_project(self) -> Optional[Project]:
+        # if the request has been applied already, our only luck is the original
+        if self.applied:
+            return self.original_project
+        else:
+            # otherwise we can use the item project
+            return self.original_project or getattr(getattr(self, "item", None), "project", None)
+
+    def item_changes_to_apply_text(self) -> str:
+        # to apply changes, we are only using the item properties, since it has not yet been applied
+        result = ""
+        datetime_format = "SHORT_DATETIME_FORMAT"
+        if self.is_start_time_adjustable():
+            result += "- start: "
+            result += format_datetime(self.get_original_start(), datetime_format)
+            result += " -> " + format_datetime(self.new_start, datetime_format)
+        if self.is_end_time_adjustable():
+            if self.is_start_time_adjustable():
+                result += "\n"
+            result += "- end: "
+            result += format_datetime(self.get_original_end(), datetime_format)
+            result += " -> " + format_datetime(self.new_end, datetime_format)
+        if self.is_quantity_adjustable():
+            if self.is_start_time_adjustable() or self.is_end_time_adjustable():
+                result += "\n"
+            result += "- quantity: "
+            result += str(self.get_original_quantity())
+            result += " -> " + str(self.new_quantity)
+        if self.is_project_adjustable():
+            if self.is_start_time_adjustable() or self.is_end_time_adjustable() or self.is_quantity_adjustable():
+                result += "\n"
+            result += "- project: "
+            result += self.get_original_project().name if self.get_original_project() else ""
+            result += " -> " + self.new_project.name
+        if self.is_waivable():
+            result += "- the charge will be waived entirely"
+        return result
+
+    def get_quantity_difference(self) -> Optional[int]:
+        if self.new_quantity is not None and self.get_original_quantity():
+            return self.new_quantity - self.get_original_quantity()
+        return None
+
+    def get_time_difference(self) -> Optional[str]:
+        timedelta_format = "{H:02}h {M:02}m {S:02}s"
+        if self.new_start or self.new_end:
+            # we need both original start and original end
+            if self.get_original_start() and self.get_original_end():
+                previous_duration = self.get_original_end() - self.get_original_start()
+                new_duration = (self.new_end or self.get_original_end()) - (self.new_start or self.get_original_start())
+                return (
+                    f"+{format_timedelta(new_duration - previous_duration, timedelta_format)}"
+                    if new_duration >= previous_duration
+                    else f"- {format_timedelta(previous_duration - new_duration, timedelta_format)}"
+                )
+        return None
+
+    def changes_status(self) -> str:
+        # return the status of the changes, whether they have been applied internally, externally or not yet
+        if not self.applied:
+            # has not been applied yet so still "requested" changes
+            return "requested changes"
+        else:
+            # has been applied but the underlying charge is still adjustable so it was mark as applied
+            if not self.item or self.is_charge_adjustable():
+                return "changes marked as applied"
+            # has been applied directly in NEMO
+            else:
+                return "applied changes"
+
+    def is_waivable(self) -> bool:
+        return self.waive and self.item and not self.item.waived
+
+    def is_start_time_adjustable(self) -> bool:
+        return self.new_start and self.item and self.item.start and self.diff_times(self.new_start, self.item.start)
+
+    def is_end_time_adjustable(self) -> bool:
+        return self.new_end and self.item and self.item.end and self.diff_times(self.new_end, self.item.end)
+
+    def is_quantity_adjustable(self) -> bool:
         return (
-            self.waive
-            or self.has_changed_time()
-            or isinstance(self.item, Reservation)
-            or self.get_quantity_difference()
+            self.new_quantity is not None
+            and self.item
+            and self.item.quantity is not None
+            and self.item.quantity != self.new_quantity
         )
 
-    def has_changed_time(self) -> bool:
-        """Returns whether the original charge is editable, i.e. if it has a changed start or end"""
-        return self.item and (self.get_new_end() or self.get_new_start())
+    def is_project_adjustable(self) -> bool:
+        return self.new_project_id and self.item and self.item.project_id != self.new_project_id
+
+    def is_charge_adjustable(self):
+        # returns whether the charge is adjustable, meaning if there is still a difference between the item
+        # and the requested changes
+        return (
+            self.is_waivable()
+            or self.is_start_time_adjustable()
+            or self.is_end_time_adjustable()
+            or self.is_quantity_adjustable()
+            or self.is_project_adjustable()
+        )
+
+    @staticmethod
+    def diff_times(first, second) -> bool:
+        # returns True if the times are different for adjustment purposes
+        # we are comparing formatted date from the UI.
+        # if the ui doesn't have microseconds or seconds then we are not using them to compare
+        return localize_input(first) != localize_input(second)
+
+    def has_item_changes(self) -> bool:
+        return self.item and (
+            self.waive or self.new_start or self.new_end or self.new_quantity is not None or self.new_project_id
+        )
 
     def creator_and_reply_users(self) -> List[User]:
         result = {self.creator}
-        for reply in self.replies:
+        for reply in self.replies.all():
             result.add(reply.author)
         result.update(self.reviewers())
         return list(result)
@@ -5422,45 +5736,82 @@ class AdjustmentRequest(BaseModel):
     def reviewers(self) -> QuerySetType[User]:
         # Create the list of users to notify/show request to. If the adjustment request has a tool/area and their
         # list of reviewers is empty, send/show to all facility managers
-        item = get_model_instance(self.item_type, self.item_id)
-        tool: Tool = getattr(item, "tool", None) if item else None
-        area: Area = getattr(item, "area", None) if item else None
         facility_managers = User.objects.filter(is_active=True, is_facility_manager=True)
-        if tool:
-            tool_reviewers = tool._adjustment_request_reviewers.filter(is_active=True)
+        if self.item_tool:
+            tool_reviewers = self.item_tool._adjustment_request_reviewers.filter(is_active=True)
             return tool_reviewers or facility_managers
-        if area:
-            area_reviewers = area.adjustment_request_reviewers.filter(is_active=True)
+        if self.item_area:
+            area_reviewers = self.item_area.adjustment_request_reviewers.filter(is_active=True)
             return area_reviewers or facility_managers
         return facility_managers
 
+    def apply_adjustment_text(self) -> str:
+        result = "Are you sure you want to adjust this charge?"
+        result += "\n\n"
+        result += "The following changes will be applied:\n"
+        result += self.item_changes_to_apply_text()
+        return result
+
     def apply_adjustment(self, user):
-        if self.status == RequestStatus.APPROVED:
+        if not self.applied and self.status == RequestStatus.APPROVED and self.has_item_changes():
             if self.waive:
+                # If waiving, waive the charge and move on
                 self.item.waive(user)
                 self.applied = True
                 self.applied_by = user
                 self.save()
-            elif self.has_changed_time():
-                new_start = self.get_new_start()
-                new_end = self.get_new_end()
-                if new_start:
-                    self.item.start = new_start
-                if new_end:
-                    self.item.end = new_end
+            else:
+                # Otherwise let's make the changes required
+                # We can only have one of times changed or quantity changed
+                if self.new_start or self.new_end:
+                    if self.new_start:
+                        self.item.start = self.new_start
+                    if self.new_end:
+                        self.item.end = self.new_end
+                elif self.new_quantity:
+                    self.item.quantity = self.new_quantity
+                # But changing the project can happen in addition to changed times and quantity
+                if self.new_project:
+                    self.item.project_id = self.new_project_id
                 self.item.save()
                 self.applied = True
                 self.applied_by = user
                 self.save()
-            elif self.get_quantity_difference():
-                self.item.quantity = self.new_quantity
+
+    def unapply(self):
+        self.applied = False
+        self.applied_by = None
+        self.save()
+
+    def can_be_reverted(self):
+        return self.applied and (
+            self.waive
+            or self.new_start
+            and self.original_start
+            or self.new_end
+            and self.original_end
+            or self.new_project_id
+            and self.original_project_id
+            or self.new_quantity
+            and self.original_quantity
+        )
+
+    def revert_adjustment(self):
+        # in case this is needed in the future
+        if self.can_be_reverted():
+            if self.waive and self.item.waived:
+                self.item.unwaive()
+            else:
+                if self.new_start:
+                    self.item.start = self.original_start
+                if self.new_end:
+                    self.item.end = self.original_end
+                if self.new_quantity:
+                    self.item.quantity = self.original_quantity
+                if self.new_project_id:
+                    self.item.project_id = self.original_project_id
                 self.item.save()
-                self.applied = True
-                self.applied_by = user
-            elif isinstance(self.item, Reservation):
-                # in this case the times have not been changed so we are essentially waiving the charge
-                self.waive = True
-                self.apply_adjustment(user)
+            self.unapply()
 
     def delete(self, using=None, keep_parents=False):
         adjustment_id = self.id
@@ -5475,11 +5826,24 @@ class AdjustmentRequest(BaseModel):
         ).delete()
 
     def save(self, *args, **kwargs):
-        # We are removing new start, new end and new quantity just in case
+        # We are removing new start, new end, new quantity and new project just in case
         if self.waive:
             self.new_end = None
             self.new_start = None
             self.new_quantity = None
+            self.new_project = None
+        # Set the original attributes
+        if self.item and self.status == RequestStatus.PENDING:
+            for att in ["start", "end", "quantity", "project_id"]:
+                item_att = getattr(self.item, att, None)
+                if item_att is not None:
+                    setattr(self, f"original_{att}", item_att)
+            tool_id = getattr(self.item, "tool_id", None)
+            area_id = getattr(self.item, "area_id", None)
+            if tool_id:
+                self.item_tool_id = tool_id
+            if area_id:
+                self.item_area_id = area_id
         super().save(*args, **kwargs)
 
     def clean(self):

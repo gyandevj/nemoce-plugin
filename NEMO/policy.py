@@ -115,22 +115,32 @@ class NEMOPolicy:
         operator_logged_in = AreaAccessRecord.objects.filter(
             area=area_for_tool, customer=operator, staff_charge=None, end=None
         ).exists()
-        if area_for_tool and not operator_logged_in and not operator.is_staff_on_tool(tool):
-            abuse_email_address = EmailsCustomization.get("abuse_email_address")
-            message = get_media_file_contents("unauthorized_tool_access_email.html")
-            if abuse_email_address and message:
-                dictionary = {"operator": operator, "tool": tool, "type": "area-access"}
-                rendered_message = render_email_template(message, dictionary)
-                send_mail(
-                    subject="Area access requirement",
-                    content=rendered_message,
-                    from_email=abuse_email_address,
-                    to=[abuse_email_address],
-                    email_category=EmailCategory.ABUSE,
+        area_occupancy_minium = tool.requires_area_occupancy_minimum
+        if area_for_tool and not operator.is_staff_on_tool(tool):
+            if not operator_logged_in:
+                abuse_email_address = EmailsCustomization.get("abuse_email_address")
+                message = get_media_file_contents("unauthorized_tool_access_email.html")
+                if abuse_email_address and message:
+                    dictionary = {"operator": operator, "tool": tool, "type": "area-access"}
+                    rendered_message = render_email_template(message, dictionary)
+                    send_mail(
+                        subject="Area access requirement",
+                        content=rendered_message,
+                        from_email=abuse_email_address,
+                        to=[abuse_email_address],
+                        email_category=EmailCategory.ABUSE,
+                    )
+                return HttpResponseBadRequest(
+                    "You must be logged in to the {} to operate this tool.".format(tool.requires_area_access.name)
                 )
-            return HttpResponseBadRequest(
-                "You must be logged in to the {} to operate this tool.".format(tool.requires_area_access.name)
-            )
+            elif area_occupancy_minium:
+                area_occupancy = AreaAccessRecord.objects.filter(
+                    area=area_for_tool, staff_charge=None, end=None
+                ).count()
+                if area_occupancy < area_occupancy_minium:
+                    return HttpResponseBadRequest(
+                        f"There needs to be at least {area_occupancy_minium} users present in the {area_for_tool} before you can operate this tool"
+                    )
 
         # The tool operator may not activate tools in a particular area,
         # unless they are still within that area reservation window.
@@ -258,7 +268,6 @@ class NEMOPolicy:
     def check_to_disable_tool(self, tool: Tool, operator: User, downtime) -> HttpResponse:
         """Check that the user is allowed to disable the tool."""
         current_usage_event = tool.get_current_usage_event()
-        has_post_usage_questions = bool(tool.post_usage_questions)
         force_off = ToolCustomization.get_bool("tool_control_ongoing_reservation_force_off")
         allow_take_over = ToolCustomization.get_bool("tool_control_allow_take_over")
 
@@ -276,10 +285,10 @@ class NEMOPolicy:
             current_usage_event.operator != operator
             and current_usage_event.user != operator
             and not (operator.is_staff_on_tool(tool) or operator.is_user_office)
-            and not (ongoing_reservation and not has_post_usage_questions)
+            and not ongoing_reservation
             and not allow_take_over
         ):
-            if not (ongoing_reservation and not has_post_usage_questions and force_off):
+            if not (ongoing_reservation and force_off):
                 return HttpResponseBadRequest(
                     "You may not disable a tool while another user is using it unless you are a staff member or have an ongoing reservation."
                 )
@@ -888,6 +897,8 @@ class NEMOPolicy:
                     future_reservations = future_reservations.exclude(
                         start_end_before_midnight | start_end_after_midnight | start_end_overlap
                     )
+            if item.policy_off_weekend:
+                future_reservations = future_reservations.exclude(start__iso_week_day__gte=6, end__iso_week_day__gte=6)
             future_reservations = future_reservations.filter(**new_reservation.reservation_item_filter)
             # Exclude any reservation that is being cancelled.
             if cancelled_reservation and cancelled_reservation.id:

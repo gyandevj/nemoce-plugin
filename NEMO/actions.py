@@ -1,10 +1,14 @@
+import json
+from collections.abc import Mapping
+from typing import Sequence
+
 from django.contrib import admin, messages
 from django.db.models import Max
 from django.urls import reverse
 from django.utils.safestring import mark_safe
 
 from NEMO.mixins import BillableItemMixin
-from NEMO.models import Area, Configuration, Interlock, InterlockCard, Qualification, Tool, User
+from NEMO.models import Area, Configuration, Interlock, InterlockCard, Qualification, Tool, ToolUsageQuestions, User
 from NEMO.typing import QuerySetType
 from NEMO.utilities import (
     BasicDisplayTable,
@@ -213,6 +217,53 @@ def duplicate_configuration(model_admin, request, queryset: QuerySetType[Configu
             )
 
 
+@admin.action(description="Duplicate selected tool usage questions")
+def duplicate_tool_usage_questions(model_admin, request, queryset: QuerySetType[ToolUsageQuestions]):
+    if not has_perm(request, queryset, "add") or not has_perm(request, queryset, "change"):
+        model_admin.message_user(request, "You do not have permission to run this action.", level=messages.ERROR)
+    for tool_usage_question in queryset:
+        try:
+            old_tools = tool_usage_question.only_for_tools.all()
+            old_projects = tool_usage_question.only_for_projects.all()
+            old_users = tool_usage_question.only_for_users.all()
+            old_groups = tool_usage_question.only_for_groups.all()
+            new_tool_usage_question = new_model_copy(tool_usage_question)
+            new_tool_usage_question.display_order = tool_usage_question.display_order + 1
+
+            def walk(x):
+                if isinstance(x, Mapping):
+                    x = dict(x)
+                    if "name" in x and isinstance(x["name"], str):
+                        x["name"] += f"_{new_tool_usage_question.display_order}"
+                    for k, v in x.items():
+                        x[k] = walk(v)
+                    return x
+                elif isinstance(x, Sequence) and not isinstance(x, str):
+                    return [walk(i) for i in x]
+                return x
+
+            new_tool_usage_question.questions = json.dumps(walk(json.loads(tool_usage_question.questions)), indent=4)
+
+            new_tool_usage_question.full_clean()
+            new_tool_usage_question.save()
+            new_tool_usage_question.only_for_tools.set(old_tools)
+            new_tool_usage_question.only_for_projects.set(old_projects)
+            new_tool_usage_question.only_for_users.set(old_users)
+            new_tool_usage_question.only_for_groups.set(old_groups)
+            messages.success(
+                request,
+                mark_safe(
+                    f'A duplicate of {str(tool_usage_question)} has been made as <a href="{reverse("admin:NEMO_toolusagequestions_change", args=[new_tool_usage_question.id])}">{str(new_tool_usage_question)}</a>'
+                ),
+            )
+        except Exception as error:
+            messages.error(
+                request,
+                f"{str(tool_usage_question)} could not be duplicated because of the following error: {str(error)}",
+            )
+
+
+@admin.action(description="Waive selected charges", permissions=["change"])
 @admin.action(description="Export selected qualifications in CSV", permissions=["view"])
 def export_qualifications_csv(model_admin, request, queryset: QuerySetType[Qualification]):
     qualifications = BasicDisplayTable()

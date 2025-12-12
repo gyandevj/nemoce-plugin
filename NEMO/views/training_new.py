@@ -215,7 +215,7 @@ def history(request):
         action_mode = request.session["training_history_mode"]
     except KeyError:
         action_mode = is_trainer(user)
-    managed_users = user.managed_users()
+    managed_users = user.managed_project_users()
     selected_user = request.GET.get("selected_user")
     user = User.objects.get(pk=selected_user) if selected_user else user
     if user not in [request.user] + managed_users:
