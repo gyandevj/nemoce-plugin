@@ -13,7 +13,7 @@ from io import BytesIO, StringIO
 from logging import getLogger
 from smtplib import SMTPServerDisconnected, SMTPResponseException
 from string import Formatter
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Set, TYPE_CHECKING, Tuple, Union
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Set, TYPE_CHECKING, Tuple, Union
 from urllib.parse import urljoin, urlparse
 
 from PIL import Image
@@ -29,7 +29,7 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import InMemoryUploadedFile
 from django.core.mail import EmailMessage
-from django.db import OperationalError
+from django.db import OperationalError, ProgrammingError
 from django.db.models import FileField, IntegerChoices, Model, QuerySet
 from django.http import HttpRequest, HttpResponse, QueryDict
 from django.shortcuts import resolve_url
@@ -909,11 +909,21 @@ def get_email_from_settings() -> str:
 
 
 def get_class_from_settings(setting_name: str, default_value: str):
-    setting_class = getattr(settings, setting_name, default_value)
-    assert isinstance(setting_class, str)
-    pkg, attr = setting_class.rsplit(".", 1)
-    ret = getattr(importlib.import_module(pkg), attr)
-    return ret()
+    return get_classes_from_settings(setting_name, [default_value])[0]
+
+
+def get_classes_from_settings(setting_name: str, default_value: Iterable) -> List:
+    setting_classes = getattr(settings, setting_name, default_value)
+    if isinstance(setting_classes, str):
+        setting_classes = [setting_classes]
+    assert isinstance(setting_classes, Iterable)
+    assert not isinstance(setting_classes, str)
+    classes = []
+    for setting_class in setting_classes:
+        pkg, attr = setting_class.rsplit(".", 1)
+        ret = getattr(importlib.import_module(pkg), attr)
+        classes.append(ret())
+    return classes
 
 
 def is_trainer(user, tool=None) -> bool:
@@ -1186,7 +1196,7 @@ def safe_lazy_queryset_evaluation(qs: QuerySet, default=UNSET, raise_exception=F
     Safely evaluates a queryset and returns the evaluated queryset or a default value.
 
     This function attempts to force the evaluation of a Django queryset. In case an
-    OperationalError occurs during the evaluation, it can either return a default value or
+    OperationalError or ProgrammingError occurs during the evaluation, it can either return a default value or
     raise the exception, based on the provided arguments. Additionally, it logs a warning
     message when the queryset evaluation fails and `raise_exception` is set to False. This
     can be helpful in handling database operational issues more gracefully.
@@ -1204,7 +1214,7 @@ def safe_lazy_queryset_evaluation(qs: QuerySet, default=UNSET, raise_exception=F
         indicating whether an error occurred.
 
     Raises:
-        OperationalError: If `raise_exception` is True and an OperationalError occurs.
+        OperationalError, ProgrammingError: If `raise_exception` is True and an OperationalError or ProgrammingError occurs.
     """
     # This isn't great but have no other option at the moment
     try:
@@ -1225,7 +1235,7 @@ def safe_lazy_queryset_evaluation(qs: QuerySet, default=UNSET, raise_exception=F
             raise
         utilities_logger.debug("Could not fetch queryset", exc_info=True)
         return default, True
-    except OperationalError:
+    except (OperationalError, ProgrammingError):
         if raise_exception:
             raise
         utilities_logger.debug("Could not fetch queryset", exc_info=True)
