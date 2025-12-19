@@ -50,6 +50,7 @@ from NEMO.models import (
     QualificationLevel,
     RecurringConsumableCharge,
     Reservation,
+    ReservationQuestions,
     Resource,
     ScheduledOutage,
     StaffAssistanceRequest,
@@ -58,11 +59,14 @@ from NEMO.models import (
     TemporaryPhysicalAccessRequest,
     Tool,
     ToolCredentials,
+    ToolUsageCounter,
+    ToolUsageQuestions,
     TrainingEvent,
     TrainingSession,
     TrainingTechnique,
     UsageEvent,
     User,
+    UserCalendarToolList,
     UserDocuments,
     UserPreferences,
 )
@@ -100,6 +104,7 @@ from NEMO.serializers import (
     QualificationLevelSerializer,
     QualificationSerializer,
     RecurringConsumableChargeSerializer,
+    ReservationQuestionsSerializer,
     ReservationSerializer,
     ResourceSerializer,
     ScheduledOutageSerializer,
@@ -111,10 +116,13 @@ from NEMO.serializers import (
     ToolCredentialsSerializer,
     ToolSerializer,
     ToolStatusSerializer,
+    ToolUsageCounterSerializer,
+    ToolUsageQuestionsSerializer,
     TrainingEventSerializer,
     TrainingSessionSerializer,
     TrainingTechniqueSerializer,
     UsageEventSerializer,
+    UserCalendarToolListSerializer,
     UserDocumentSerializer,
     UserPreferenceSerializer,
     UserSerializer,
@@ -273,6 +281,13 @@ class UserDocumentsViewSet(ModelViewSet):
     }
 
 
+class UserCalendarToolListViewSet(ModelViewSet):
+    filename = "user_calendar_tool_lists"
+    queryset = UserCalendarToolList.objects.all()
+    serializer_class = UserCalendarToolListSerializer
+    filterset_fields = {"id": key_filters, "name": string_filters, "user": key_filters, "tools": manykey_filters}
+
+
 class UserPreferencesViewSet(ModelViewSet):
     filename = "user_preferences"
     queryset = UserPreferences.objects.all()
@@ -374,7 +389,14 @@ class AccountViewSet(ModelViewSet):
     filename = "accounts"
     queryset = Account.objects.all()
     serializer_class = AccountSerializer
-    filterset_fields = {"id": key_filters, "name": string_filters, "active": boolean_filters}
+    filterset_fields = {
+        "id": key_filters,
+        "type": key_filters,
+        "name": string_filters,
+        "note": string_filters,
+        "start_date": date_filters,
+        "active": boolean_filters,
+    }
 
 
 class ToolViewSet(ModelViewSet):
@@ -390,8 +412,9 @@ class ToolViewSet(ModelViewSet):
         "_operational": boolean_filters,
         "_location": string_filters,
         "_requires_area_access": key_filters,
-        "_post_usage_questions": string_filters,
-        "_pre_usage_questions": string_filters,
+        "_requires_area_occupancy_minimum": number_filters,
+        "_problem_shutdown_enabled": boolean_filters,
+        "_qualifications_never_expire": boolean_filters,
     }
 
 
@@ -636,6 +659,24 @@ class ReservationViewSet(ModelViewSet):
         "waived": boolean_filters,
         "waived_on": datetime_filters,
         "waived_by": key_filters,
+        "note": string_filters,
+    }
+
+
+class ReservationQuestionsViewSet(ModelViewSet):
+    filename = "reservation_questions"
+    queryset = ReservationQuestions.objects.all()
+    serializer_class = ReservationQuestionsSerializer
+    filterset_fields = {
+        "id": key_filters,
+        "name": string_filters,
+        "enabled": boolean_filters,
+        "tool_reservations": boolean_filters,
+        "only_for_tools": manykey_filters,
+        "area_reservations": boolean_filters,
+        "only_for_areas": manykey_filters,
+        "only_for_projects": manykey_filters,
+        "questions": string_filters,
     }
 
 
@@ -661,6 +702,7 @@ class UsageEventViewSet(ModelViewSet):
         "waived": boolean_filters,
         "waived_on": datetime_filters,
         "waived_by": key_filters,
+        "note": string_filters,
     }
 
 
@@ -837,6 +879,7 @@ class ConsumableViewSet(ModelViewSet):
     serializer_class = ConsumableSerializer
     filterset_fields = {
         "id": key_filters,
+        "name": string_filters,
         "category_id": key_filters,
         "category": key_filters,
         "quantity": number_filters,
@@ -1007,11 +1050,61 @@ class AdjustmentRequestViewSet(ModelViewSet):
         "manager_note": string_filters,
         "new_start": datetime_filters,
         "new_end": datetime_filters,
+        "new_quantity": number_filters,
+        "new_project": key_filters,
+        "item_tool": key_filters,
+        "item_area": key_filters,
         "status": number_filters,
         "reviewer": key_filters,
         "applied": boolean_filters,
         "applied_by": key_filters,
         "deleted": boolean_filters,
+    }
+
+
+class ToolUsageQuestionsViewSet(ModelViewSet):
+    filename = "tool_usage_questions"
+    queryset = ToolUsageQuestions.objects.all()
+    serializer_class = ToolUsageQuestionsSerializer
+    filterset_fields = {
+        "id": key_filters,
+        "name": string_filters,
+        "enabled": boolean_filters,
+        "display_order": number_filters,
+        "only_for_tools": manykey_filters,
+        "only_for_projects": manykey_filters,
+        "only_for_users": manykey_filters,
+        "only_for_groups": manykey_filters,
+        "questions_type": string_filters,
+        "questions": string_filters,
+    }
+
+
+class ToolUsageCounterViewSet(ModelViewSet):
+    filename = "tool_usage_counters"
+    queryset = ToolUsageCounter.objects.all()
+    serializer_class = ToolUsageCounterSerializer
+    filterset_fields = {
+        "id": key_filters,
+        "tool": key_filters,
+        "name": string_filters,
+        "description": string_filters,
+        "value": number_filters,
+        "default_value": number_filters,
+        "counter_direction": number_filters,
+        "tool_pre_usage_question": string_filters,
+        "tool_post_usage_question": string_filters,
+        "staff_members_can_reset": boolean_filters,
+        "superusers_can_reset": boolean_filters,
+        "qualified_users_can_reset": boolean_filters,
+        "last_reset_value": number_filters,
+        "last_reset": datetime_filters,
+        "last_reset_by": key_filters,
+        "email_facility_managers_when_reset": boolean_filters,
+        "warning_threshold": number_filters,
+        "warning_email": string_filters,
+        "warning_threshold_reached": boolean_filters,
+        "is_active": boolean_filters,
     }
 
 

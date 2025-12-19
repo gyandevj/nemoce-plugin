@@ -15,49 +15,43 @@ from NEMO.models import (
     UsageEvent,
     User,
 )
-from NEMO.tests.test_utilities import (
-    create_user_and_project,
-    login_as,
-    login_as_staff,
-    login_as_user,
-    validate_model_error,
-)
+from NEMO.tests.test_utilities import NEMOTestCaseMixin, create_user_and_project
 from NEMO.utilities import RecurrenceFrequency, beginning_of_next_day, beginning_of_the_day
 from NEMO.views.customization import AdjustmentRequestsCustomization
 
 
-class AdjustmentRequestTestCase(TestCase):
+class AdjustmentRequestTestCase(NEMOTestCaseMixin, TestCase):
     def setUp(self) -> None:
         AdjustmentRequestsCustomization.set("adjustment_requests_enabled", "enabled")
 
     def test_enable_adjustment_requests(self):
         AdjustmentRequestsCustomization.set("adjustment_requests_enabled", "")
-        login_as_user(self.client)
-        response = self.client.get(reverse("adjustment_requests"))
+        self.login_as_user()
+        response = self.client.get(reverse("adjustment_requests", args=[0]))
         self.assertContains(response, "not enabled", status_code=400)
 
     def test_enable_adjustment_requests_reviewers_only(self):
         AdjustmentRequestsCustomization.set("adjustment_requests_enabled", "reviewers_only")
-        login_as_user(self.client)
-        response = self.client.get(reverse("adjustment_requests"))
+        self.login_as_user()
+        response = self.client.get(reverse("adjustment_requests", args=[0]))
         self.assertContains(response, "not enabled", status_code=400)
         tool = Tool.objects.create(name="tool")
         user = User.objects.create(username="test", first_name="t", last_name="e")
         tool.adjustment_request_reviewers.add(user)
-        login_as(self.client, user)
-        response = self.client.get(reverse("adjustment_requests"))
+        self.login_as(user)
+        response = self.client.get(reverse("adjustment_requests", args=[0]))
         self.assertTrue(response.status_code == 200)
 
     def test_create_request(self):
         user, project = create_user_and_project()
         adjustment_request = AdjustmentRequest()
-        validate_model_error(self, adjustment_request, ["creator", "description"])
+        self.validate_model_error(adjustment_request, ["creator", "description"])
         adjustment_request.creator = user
         # need a description
         adjustment_request.description = "some description"
         adjustment_request.full_clean()
         adjustment_request.description = ""
-        validate_model_error(self, adjustment_request, ["description"])
+        self.validate_model_error(adjustment_request, ["description"])
         adjustment_request.description = "some description"
         # now try with a charge
         start = timezone.now() - relativedelta(hours=1)
@@ -82,7 +76,7 @@ class AdjustmentRequestTestCase(TestCase):
         reviewer = User.objects.create(
             username="test_manager", first_name="Managy", last_name="McManager", is_facility_manager=True
         )
-        login_as_user(self.client)
+        self.login_as_user()
         data = {
             "description": "some adjustment request",
         }
@@ -97,11 +91,11 @@ class AdjustmentRequestTestCase(TestCase):
         adjustment_request.creator = user
         adjustment_request.description = "some adjustment request"
         adjustment_request.save()
-        login_as_user(self.client)
+        self.login_as_user()
         response = self.client.get(reverse("delete_adjustment_request", args=[adjustment_request.id]))
         # different user cannot delete
         self.assertContains(response, "You are not allowed to delete a request you", status_code=400)
-        login_as(self.client, user)
+        self.login_as(user)
         adjustment_request.status = RequestStatus.APPROVED
         adjustment_request.save()
         response = self.client.get(reverse("delete_adjustment_request", args=[adjustment_request.id]))
@@ -124,7 +118,7 @@ class AdjustmentRequestTestCase(TestCase):
     def review_request(self, approve_request="", deny_request=""):
         reviewer = User.objects.create(username="manager", first_name="", last_name="Manager", is_facility_manager=True)
         user, project = create_user_and_project()
-        login_as(self.client, user)
+        self.login_as(user)
         data = {
             "description": "some adjustment request",
         }
@@ -136,7 +130,7 @@ class AdjustmentRequestTestCase(TestCase):
                 notification_type=Notification.Types.ADJUSTMENT_REQUEST, object_id=adjustment_request.id
             ).exists()
         )
-        login_as_user(self.client)
+        self.login_as_user()
         data = {"description": adjustment_request.description}
         if approve_request:
             data["approve_request"] = approve_request
@@ -145,12 +139,12 @@ class AdjustmentRequestTestCase(TestCase):
         response = self.client.post(reverse("edit_adjustment_request", args=[adjustment_request.id]), data=data)
         # regular user cannot edit request they didn't create
         self.assertContains(response, "You are not allowed to edit this request.")
-        staff = login_as_staff(self.client)
+        staff = self.login_as_staff()
         response = self.client.post(reverse("edit_adjustment_request", args=[adjustment_request.id]), data=data)
         # regular staff cannot either
         self.assertContains(response, "You are not allowed to edit this request.")
         # reviewer can
-        login_as(self.client, reviewer)
+        self.login_as(reviewer)
         response = self.client.post(reverse("edit_adjustment_request", args=[adjustment_request.id]), data=data)
         self.assertRedirects(response, reverse("user_requests", args=["adjustment"]))
         adjustment_request = AdjustmentRequest.objects.get(id=adjustment_request.id)
@@ -169,13 +163,13 @@ class AdjustmentRequestTestCase(TestCase):
         adjustment_request.creator = user
         adjustment_request.description = "some adjustment request"
         adjustment_request.save()
-        login_as_user(self.client)
+        self.login_as_user()
         data = {"reply_content": "this is a reply"}
         response = self.client.post(reverse("adjustment_request_reply", args=[adjustment_request.id]), data=data)
         self.assertContains(
             response, "Only the creator and reviewers can reply to adjustment requests", status_code=400
         )
-        staff = login_as_staff(self.client)
+        staff = self.login_as_staff()
         response = self.client.post(reverse("adjustment_request_reply", args=[adjustment_request.id]), data=data)
         self.assertContains(
             response, "Only the creator and reviewers can reply to adjustment requests", status_code=400

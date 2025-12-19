@@ -51,6 +51,7 @@ from NEMO.models import (
     QualificationLevel,
     RecurringConsumableCharge,
     Reservation,
+    ReservationQuestions,
     Resource,
     ScheduledOutage,
     StaffAssistanceRequest,
@@ -60,11 +61,14 @@ from NEMO.models import (
     TemporaryPhysicalAccessRequest,
     Tool,
     ToolCredentials,
+    ToolUsageCounter,
+    ToolUsageQuestions,
     TrainingEvent,
     TrainingSession,
     TrainingTechnique,
     UsageEvent,
     User,
+    UserCalendarToolList,
     UserDocuments,
     UserPreferences,
 )
@@ -173,6 +177,8 @@ class UserSerializer(FlexFieldsSerializerMixin, ModelSerializer):
         expandable_fields = {
             "projects": ("NEMO.serializers.ProjectSerializer", {"many": True}),
             "managed_projects": ("NEMO.serializers.ProjectSerializer", {"many": True}),
+            "managed_accounts": ("NEMO.serializers.AccountSerializer", {"many": True}),
+            "managed_users": ("NEMO.serializers.UserSerializer", {"many": True}),
             "groups": ("NEMO.serializers.GroupSerializer", {"many": True}),
             "user_documents": ("NEMO.serializers.UserDocumentSerializer", {"many": True}),
             "user_permissions": ("NEMO.serializers.PermissionSerializer", {"many": True}),
@@ -201,6 +207,16 @@ class UserDocumentSerializer(FlexFieldsSerializerMixin, ModelSerializer):
         fields = "__all__"
         expandable_fields = {
             "user": "NEMO.serializers.UserSerializer",
+        }
+
+
+class UserCalendarToolListSerializer(FlexFieldsSerializerMixin, ModelSerializer):
+    class Meta:
+        model = UserCalendarToolList
+        fields = "__all__"
+        expandable_fields = {
+            "user": "NEMO.serializers.UserSerializer",
+            "tools": ("NEMO.serializers.ToolSerializer", {"many": True}),
         }
 
 
@@ -286,7 +302,6 @@ class ToolSerializer(FlexFieldsSerializerMixin, ModelSerializer):
             "_superusers": ("NEMO.serializers.UserSerializer", {"many": True}),
             "_requires_area_access": "NEMO.serializers.AreaSerializer",
             "project": "NEMO.serializers.ProjectSerializer",
-            "descendant": "NEMO.serializers.ReservationSerializer",
         }
 
 
@@ -365,6 +380,17 @@ class ReservationSerializer(FlexFieldsSerializerMixin, ModelSerializer):
             "configuration_options": ("NEMO.serializers.ConfigurationOptionSerializer", {"many": True}),
             "validated_by": "NEMO.serializers.UserSerializer",
             "waived_by": "NEMO.serializers.UserSerializer",
+        }
+
+
+class ReservationQuestionsSerializer(FlexFieldsSerializerMixin, ModelSerializer):
+    class Meta:
+        model = ReservationQuestions
+        fields = "__all__"
+        expandable_fields = {
+            "only_for_tools": ("NEMO.serializers.ToolSerializer", {"many": True}),
+            "only_for_areas": ("NEMO.serializers.AreaSerializer", {"many": True}),
+            "only_for_projects": ("NEMO.serializers.ProjectSerializer", {"many": True}),
         }
 
 
@@ -602,6 +628,31 @@ class AdjustmentRequestSerializer(FlexFieldsSerializerMixin, ModelSerializer):
             "reviewer": "NEMO.serializers.UserSerializer",
             "item_type": "NEMO.serializers.ContentTypeSerializer",
             "applied_by": "NEMO.serializers.UserSerializer",
+            "new_project": "NEMO.serializers.ProjectSerializer",
+            "item_tool": "NEMO.serializers.ToolSerializer",
+            "item_area": "NEMO.serializers.AreaSerializer",
+        }
+
+
+class ToolUsageQuestionsSerializer(FlexFieldsSerializerMixin, ModelSerializer):
+    class Meta:
+        model = ToolUsageQuestions
+        fields = "__all__"
+        expandable_fields = {
+            "only_for_tools": ("NEMO.serializers.ToolSerializer", {"many": True}),
+            "only_for_projects": ("NEMO.serializers.ProjectSerializer", {"many": True}),
+            "only_for_users": ("NEMO.serializers.UserSerializer", {"many": True}),
+            "only_for_groups": ("NEMO.serializers.GroupSerializer", {"many": True}),
+        }
+
+
+class ToolUsageCounterSerializer(FlexFieldsSerializerMixin, ModelSerializer):
+    class Meta:
+        model = ToolUsageCounter
+        fields = "__all__"
+        expandable_fields = {
+            "tool": "NEMO.serializers.ToolSerializer",
+            "last_reset_by": "NEMO.serializers.UserSerializer",
         }
 
 

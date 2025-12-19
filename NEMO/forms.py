@@ -80,6 +80,8 @@ class UserForm(ModelForm):
             "date_joined",
             "last_login",
             "managed_projects",
+            "managed_accounts",
+            "managed_users",
             "preferences",
             "qualifications",
         ]
@@ -90,7 +92,7 @@ class ProjectForm(ModelForm):
         model = Project
         exclude = ["only_allow_tools", "allow_consumable_withdrawals", "allow_staff_charges"]
 
-    principal_investigators = ModelMultipleChoiceField(
+    managers = ModelMultipleChoiceField(
         queryset=User.objects.all(),
         required=False,
         widget=FilteredSelectMultiple(verbose_name="Principal investigators", is_stacked=False),
@@ -99,23 +101,44 @@ class ProjectForm(ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.instance.pk:
-            self.fields["principal_investigators"].initial = self.instance.manager_set.all()
+            self.fields["managers"].initial = self.instance.manager_set.all()
 
     def _save_m2m(self):
         super()._save_m2m()
         exclude = self._meta.exclude
         fields = self._meta.fields
         # Check for fields and exclude
-        if fields and "principal_investigators" not in fields or exclude and "principal_investigators" in exclude:
+        if fields and "managers" not in fields or exclude and "managers" in exclude:
             return
-        if "principal_investigators" in self.cleaned_data:
-            self.instance.manager_set.set(self.cleaned_data["principal_investigators"])
+        if "managers" in self.cleaned_data:
+            self.instance.manager_set.set(self.cleaned_data["managers"])
 
 
 class AccountForm(ModelForm):
+    managers = ModelMultipleChoiceField(
+        queryset=User.objects.all(),
+        required=False,
+        widget=FilteredSelectMultiple(verbose_name="Managers", is_stacked=False),
+    )
+
     class Meta:
         model = Account
         fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance.pk:
+            self.fields["managers"].initial = self.instance.manager_set.all()
+
+    def _save_m2m(self):
+        super()._save_m2m()
+        exclude = self._meta.exclude
+        fields = self._meta.fields
+        # Check for fields and exclude
+        if fields and "managers" not in fields or exclude and "managers" in exclude:
+            return
+        if "managers" in self.cleaned_data:
+            self.instance.manager_set.set(self.cleaned_data["managers"])
 
 
 class TaskForm(ModelForm):
@@ -159,6 +182,9 @@ class TaskForm(ModelForm):
                 raise ValidationError(
                     "This task can't be resolved because it is marked as 'cancelled' or 'resolved' already."
                 )
+        tool = cleaned_data.get("tool")
+        if tool and not tool.problem_shutdown_enabled:
+            cleaned_data["force_shutdown"] = False
         return cleaned_data
 
     def save(self, commit=True):
@@ -371,6 +397,7 @@ class EmailBroadcastForm(Form):
             ("tool-reservation", "tool-reservation"),
             ("project", "project"),
             ("project-pis", "project-pis"),
+            ("account-managers", "account-managers"),
             ("account", "account"),
             ("area", "area"),
             ("user", "user"),
@@ -519,31 +546,44 @@ class TemporaryPhysicalAccessRequestForm(ModelForm):
 class AdjustmentRequestForm(ModelForm):
     class Meta:
         model = AdjustmentRequest
-        exclude = ["creation_time", "creator", "last_updated", "last_updated_by", "status", "reviewer", "deleted"]
+        exclude = [
+            "creation_time",
+            "creator",
+            "last_updated",
+            "last_updated_by",
+            "status",
+            "reviewer",
+            "deleted",
+            "original_start",
+            "original_end",
+            "original_quantity",
+            "original_project",
+            "item_tool",
+            "item_area",
+        ]
 
     def clean(self) -> dict:
         cleaned_data = super().clean()
-        edit = bool(self.instance.pk)
         item_type = cleaned_data.get("item_type")
         item_id = cleaned_data.get("item_id")
-        if item_type and item_id and not edit:
+        if item_type and item_id:
             item = item_type.get_object_for_this_type(pk=item_id)
             new_start = cleaned_data.get("new_start")
             new_end = cleaned_data.get("new_end")
-            # If the dates/quantities are not changed, remove them
+            # If the dates/quantities/projects are not changed, remove them
             # We are comparing formatted dates so we have the correct precision (otherwise user input might not have seconds/milliseconds and they would not be equal)
-            if (
-                new_start
-                and new_end
-                and format_datetime(new_start) == format_datetime(item.start)
-                and format_datetime(new_end) == format_datetime(item.end)
-            ):
+            if new_start and not AdjustmentRequest.diff_times(new_start, item.start):
                 cleaned_data["new_start"] = None
+            if new_end and not AdjustmentRequest.diff_times(new_end, item.end):
                 cleaned_data["new_end"] = None
             # also remove quantity if not changed
             new_quantity = cleaned_data.get("new_quantity")
             if new_quantity and new_quantity == item.quantity:
                 cleaned_data["new_quantity"] = None
+            # also remove project if not changed
+            new_project = cleaned_data.get("new_project")
+            if new_project and new_project == item.project:
+                cleaned_data["new_project"] = None
         return cleaned_data
 
 
@@ -636,9 +676,9 @@ def save_scheduled_outage(
 
     # If there is a policy problem for the outage then return the error...
     if check_policy:
-        policy_problem = policy.check_to_create_outage(outage)
-        if policy_problem:
-            return policy_problem
+        response = policy.check_to_create_outage(outage)
+        if response.status_code != 200:
+            return response
 
     if form.cleaned_data.get("recurring_outage"):
         # we have to remove tz before creating rules otherwise 8am would become 7am after DST change for example.

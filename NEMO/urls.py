@@ -17,7 +17,7 @@ from rest_framework import routers
 
 from NEMO.constants import MEDIA_PROTECTED
 from NEMO.decorators import any_staff_required
-from NEMO.models import ReservationItemType
+from NEMO.models import ReservationItemType, ToolUsageQuestionType
 from NEMO.views import (
     abuse,
     access_requests,
@@ -111,6 +111,7 @@ router.register(r"qualifications", api.QualificationViewSet)
 router.register(r"recurring_consumable_charges", api.RecurringConsumableChargesViewSet)
 router.register(r"reservations", api.ReservationViewSet)
 router.register(r"reservation_configuration_options", api.ConfigurationOptionViewSet)
+router.register(r"reservation_questions", api.ReservationQuestionsViewSet)
 router.register(r"resources", api.ResourceViewSet)
 router.register(r"scheduled_outages", api.ScheduledOutageViewSet)
 router.register(r"staff_assistance_requests", api.StaffAssistanceRequestViewSet)
@@ -120,17 +121,21 @@ router.register(r"tools", api.ToolViewSet)
 router.register(r"tool_comments", api.ToolCommentViewSet)
 router.register(r"tool_credentials", api.ToolCredentialsViewSet)
 router.register(r"tool_status", api.ToolStatusViewSet, basename="tool_status")
+router.register(r"tool_usage_counters", api.ToolUsageCounterViewSet)
+router.register(r"tool_usage_questions", api.ToolUsageQuestionsViewSet)
 router.register(r"training_events", api.TrainingEventViewSet)
 router.register(r"training_sessions", api.TrainingSessionViewSet)
 router.register(r"training_techniques", api.TrainingTechniqueViewSet)
 router.register(r"usage_events", api.UsageEventViewSet)
 router.register(r"users", api.UserViewSet)
 router.register(r"user_documents", api.UserDocumentsViewSet)
+router.register(r"user_calendar_tool_lists", api.UserCalendarToolListViewSet)
 router.register(r"user_preferences", api.UserPreferencesViewSet)
 router.register(r"metadata", api.MetadataViewSet, basename="metadata")
 router.registry.sort(key=sort_urls)
 
 reservation_item_types = f'(?P<item_type>{"|".join(ReservationItemType.values())})'
+tool_usage_question_types = f'(?P<question_type>{"|".join(ToolUsageQuestionType.values)})'
 
 urlpatterns = []
 
@@ -188,6 +193,13 @@ urlpatterns += [
     re_path(r"^tool_control/(?P<item_type>(tool))/(?P<tool_id>\d+)/$", tool_control.tool_control, name="tool_control"),
     path("tool_control/<int:tool_id>/", tool_control.tool_control, name="tool_control"),
     path("tool_control/", tool_control.tool_control, name="tool_control"),
+    re_path(
+        r"^tool_usage_questions/(?P<tool_id>\d+)/"
+        + tool_usage_question_types
+        + "/(?P<user_id>\d+)/(?P<project_id>\d+)/(?P<virtual_inputs>(true|false))/$",
+        tool_control.tool_usage_questions,
+        name="tool_usage_questions",
+    ),
     path("tool_status/<int:tool_id>/", tool_control.tool_status, name="tool_status"),
     path("use_tool_for_other/", tool_control.use_tool_for_other, name="use_tool_for_other"),
     path("tool_configuration/", tool_control.tool_configuration, name="tool_configuration"),
@@ -269,7 +281,11 @@ urlpatterns += [
         name="staff_assistance_request_reply",
     ),
     # Adjustment requests
-    path("adjustment_requests/", adjustment_requests.adjustment_requests, name="adjustment_requests"),
+    path(
+        "adjustment_requests/<int:status>/",
+        adjustment_requests.adjustment_requests,
+        name="adjustment_requests",
+    ),
     path("create_adjustment_request/", adjustment_requests.create_adjustment_request, name="create_adjustment_request"),
     path(
         "create_adjustment_request/<int:item_type_id>/<int:item_id>/",
@@ -351,6 +367,11 @@ urlpatterns += [
     path("cancel_reservation/<int:reservation_id>/", calendar.cancel_reservation, name="cancel_reservation"),
     path("cancel_outage/<int:outage_id>/", calendar.cancel_outage, name="cancel_outage"),
     path("set_reservation_title/<int:reservation_id>/", calendar.set_reservation_title, name="set_reservation_title"),
+    path(
+        "change_reservation_note/<int:reservation_id>/",
+        calendar.change_reservation_note,
+        name="change_reservation_note",
+    ),
     path("change_outage_title/<int:outage_id>/", calendar.change_outage_title, name="change_outage_title"),
     path("change_outage_details/<int:outage_id>/", calendar.change_outage_details, name="change_outage_details"),
     path("change_reservation_date/", calendar.change_reservation_date, name="change_reservation_date"),
@@ -362,6 +383,17 @@ urlpatterns += [
     ),
     path("proxy_reservation/", calendar.proxy_reservation, name="proxy_reservation"),
     path("tool_calendar_info/<int:tool_id>/", calendar.get_selected_tool_calendar_info, name="tool_calendar_info"),
+    path(
+        "tool_calendar_save_user_tool_list/<str:tool_list_name>/",
+        calendar.save_tool_list,
+        name="tool_calendar_save_user_tool_list",
+    ),
+    path(
+        "tool_calendar_delete_user_tool_list/<int:tool_list_id>/",
+        calendar.delete_tool_list,
+        name="tool_calendar_delete_user_tool_list",
+    ),
+    path("tool_calendar_load_user_tool_lists/", calendar.load_tool_lists, name="tool_calendar_load_user_tool_lists"),
     # Event Details:
     path(
         "event_details/reservation/<int:reservation_id>/", event_details.reservation_details, name="reservation_details"
@@ -454,7 +486,7 @@ urlpatterns += [
     path("send_email/", email.send_email, name="send_email"),
     path("email_broadcast/", email.email_broadcast, name="email_broadcast"),
     re_path(
-        r"^email_broadcast/(?P<audience>tool|area|account|project|project-pis|user|tool-reservation)/$",
+        r"^email_broadcast/(?P<audience>tool|area|account|project|project-pis|account-managers|user|tool-reservation)/$",
         email.email_broadcast,
         name="email_broadcast",
     ),
@@ -853,6 +885,11 @@ if settings.ALLOW_CONDITIONAL_URLS:
             "remove_user_from_project/", accounts_and_projects.remove_user_from_project, name="remove_user_from_project"
         ),
         path("add_user_to_project/", accounts_and_projects.add_user_to_project, name="add_user_to_project"),
+        re_path(
+            r"^add_or_remove_manager_from_account_project/(?P<action>add|remove|)/(?P<kind>account|project|)/(?P<identifier>\d+)/$",
+            accounts_and_projects.add_or_remove_manager_from_account_project,
+            name="add_or_remove_manager_from_account_project",
+        ),
         path(
             "projects/<int:project_id>/remove_document/<int:document_id>/",
             accounts_and_projects.remove_document_from_project,

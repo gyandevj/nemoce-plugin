@@ -11,6 +11,10 @@ from django.utils.safestring import mark_safe
 class ConfigurationEditor(Widget):
     template_name = "configuration/configuration_line_item.html"
 
+    def __init__(self, attrs=None, url=None):
+        self.url = url or reverse("tool_configuration")
+        super().__init__(attrs)
+
     def render(self, name, value, attrs=None, **kwargs):
         from NEMO.models import Configuration
         from NEMO.views.customization import ToolCustomization

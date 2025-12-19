@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from itertools import chain
+from typing import Any, Dict
 
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q
@@ -13,12 +14,7 @@ from NEMO.exceptions import ProjectChargeException, RequiredUnansweredQuestionsE
 from NEMO.models import Area, Project, Reservation, ReservationItemType, ScheduledOutage, Tool, TrainingEvent, User
 from NEMO.policy import accessory_conflicts_for_reservation, policy_class as policy
 from NEMO.utilities import beginning_of_the_day, end_of_the_day, localize
-from NEMO.views.calendar import (
-    extract_reservation_questions,
-    extract_tool_accessories,
-    render_reservation_questions,
-    set_reservation_configuration,
-)
+from NEMO.views.calendar import set_reservation_configuration, extract_tool_accessories
 from NEMO.views.customization import CalendarCustomization, TrainingCustomization
 
 
@@ -27,7 +23,7 @@ from NEMO.views.customization import CalendarCustomization, TrainingCustomizatio
 def choose_item(request, next_page):
     user: User = request.user
     tools = Tool.objects.filter(visible=True).order_by("_category", "name")
-    dictionary = {
+    dictionary: Dict[str, Any] = {
         "tools": list(tools),
         "areas": [],
     }
@@ -131,10 +127,10 @@ def make_reservation(request):
         if not user.is_staff and not user.is_staff_on_tool(item):
             return render(request, "mobile/error.html", {"message": "You must specify a project for your reservation"})
 
-    reservation_questions = render_reservation_questions(item_type, item.id, reservation.project)
+    dynamic_forms = item.get_reservation_questions(reservation.project)
     tool_config = item_type == ReservationItemType.TOOL and item.is_configurable()
     tool_accessories = item_type == ReservationItemType.TOOL and item.toolaccessory_set.all()
-    needs_extra_config = reservation_questions or tool_config or tool_accessories
+    needs_extra_config = dynamic_forms or tool_config
     if needs_extra_config and not request.POST.get("configured") == "true":
         dictionary = {
             "request_date": request.POST["date"],
@@ -146,7 +142,7 @@ def make_reservation(request):
             dictionary.update(item.get_configuration_information(user=user, start=reservation.start))
             dictionary["tool_accessories"] = tool_accessories
             dictionary["conflicts"] = accessory_conflicts_for_reservation(reservation, tool_accessories)
-        dictionary["reservation_questions"] = reservation_questions
+        dictionary["reservation_questions"] = dynamic_forms.render()
         return render(request, "mobile/reservation_extra.html", dictionary)
 
     # Check for accessory policy
@@ -169,7 +165,7 @@ def make_reservation(request):
 
     # Reservation questions if applicable
     try:
-        reservation.question_data = extract_reservation_questions(request, item_type, item.id, reservation.project)
+        reservation.question_data = dynamic_forms.extract(request)
     except RequiredUnansweredQuestionsException as e:
         return render(request, "mobile/error.html", {"message": str(e)})
 
