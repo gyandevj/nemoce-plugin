@@ -44,8 +44,8 @@ def get_pre_authentication_backends():
         "PRE_AUTH_BACKENDS",
         [
             get_full_class_name(GenericRemoteUserAuthenticationBackend),
-            get_full_class_name(RemoteUserAuthenticationBackend),
             get_full_class_name(GenericBasicAuthenticationHeaderAuthenticationBackend),
+            get_full_class_name(RemoteUserAuthenticationBackend),
             get_full_class_name(NginxKerberosAuthorizationHeaderAuthenticationBackend),
         ],
     )
