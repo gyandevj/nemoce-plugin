@@ -15,7 +15,7 @@ def user_requests(request, tab: str = None):
     )
     buddy_requests_enabled = Area.objects.filter(buddy_system_allowed=True).exists()
     adjustment_requests_enabled = AdjustmentRequestsCustomization.are_adjustment_requests_enabled_for_user(request.user)
-    staff_assistance_enabled = UserRequestsCustomization.get_bool("staff_assistance_enabled")
+    staff_assistance_enabled = UserRequestsCustomization.get_bool("staff_assistance_requests_enabled")
     active_tab = tab or (
         "access"
         if access_requests_enabled
