@@ -9,17 +9,23 @@ from NEMO.views.customization import AdjustmentRequestsCustomization, UserReques
 @login_required
 @require_GET
 def user_requests(request, tab: str = None):
+    access_requests_enabled = (
+        PhysicalAccessLevel.objects.filter(allow_user_request=True).exists()
+        and User.objects.filter(is_active=True, is_facility_manager=True).exists()
+    )
+    buddy_requests_enabled = Area.objects.filter(buddy_system_allowed=True).exists()
+    adjustment_requests_enabled = AdjustmentRequestsCustomization.are_adjustment_requests_enabled_for_user(request.user)
+    staff_assistance_enabled = UserRequestsCustomization.get_bool("staff_assistance_enabled")
     active_tab = tab or (
         "access"
-        if PhysicalAccessLevel.objects.filter(allow_user_request=True).exists()
-        and User.objects.filter(is_active=True, is_facility_manager=True).exists()
+        if access_requests_enabled
         else (
             "buddy"
-            if Area.objects.filter(buddy_system_allowed=True).exists()
+            if buddy_requests_enabled
             else (
                 "adjustment"
-                if AdjustmentRequestsCustomization.are_adjustment_requests_enabled_for_user(request.user)
-                else "staff_assistance"
+                if adjustment_requests_enabled
+                else "staff_assistance" if staff_assistance_enabled else "training"
             )
         )
     )
