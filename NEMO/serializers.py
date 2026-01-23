@@ -66,6 +66,7 @@ from NEMO.models import (
     TrainingEvent,
     TrainingSession,
     TrainingTechnique,
+    UnplannedOutage,
     UsageEvent,
     User,
     UserCalendarToolList,
@@ -452,6 +453,15 @@ class ScheduledOutageSerializer(FlexFieldsSerializerMixin, ModelSerializer):
             "tool": "NEMO.serializers.ToolSerializer",
             "area": "NEMO.serializers.AreaSerializer",
             "resource": "NEMO.serializers.ResourceSerializer",
+        }
+
+
+class UnplannedOutageSerializer(FlexFieldsSerializerMixin, ModelSerializer):
+    class Meta:
+        model = UnplannedOutage
+        fields = "__all__"
+        expandable_fields = {
+            "tool": "NEMO.serializers.ToolSerializer",
         }
 
 
