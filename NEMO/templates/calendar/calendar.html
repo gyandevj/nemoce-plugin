@@ -646,7 +646,7 @@ function create_calendar()
 	{
 		"header":
 		{
-			left: "prev,next today{% if user.is_staff or user.is_tool_staff %} proxyReservation scheduledOutage{% endif %}{% if customizations|get_item:"training_module_enabled" == "enabled" %}{% if user|is_trainer %} scheduleTraining{% endif %} requestTraining{% endif %} login logout",
+			left: "prev,next today{% if user.is_staff or user.is_tool_staff %} proxyReservation scheduledOutage{% endif %}{% if customizations|get_item:"training_module_enabled" == "enabled" %}{% if user|is_trainer %} scheduleTraining{% endif %} {% if customizations|get_item:"training_requests_enabled" == "enabled" %}requestTraining{% endif %}{% endif %} login logout",
 			center: "title",
 			right: "agendaDay,agendaWeek,month"
 		},
@@ -752,6 +752,7 @@ function reserve_for_someone_else_callback(response, status, xml_http_request)
 
 function request_training()
 {
+	{% if customizations|get_item:"training_requests_enabled" == "enabled" %}
 	let item = get_selected_item();
 	if (item && item !== "personal_schedule" && item !== "all_tools" && item !== "all_areas" && item !== "all_areastools")
 	{
@@ -779,6 +780,7 @@ function request_training()
 		}
 		ajax_get(url, event_changes, function(response, status, xml_http_request) { return event_creation_success_callback(response, status, xml_http_request, post_data, callback) }, [ajax_failure_callback("Training request creation failed")])
 	}
+    {% endif %}
 }
 
 function login_to_area()

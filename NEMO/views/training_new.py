@@ -72,6 +72,8 @@ def requests(request):
     mark_training_objects_expired()
     if not TrainingCustomization.get_bool("training_module_enabled"):
         return redirect("landing")
+    if not TrainingCustomization.get_bool("training_requests_enabled"):
+        return redirect("upcoming_training_events")
     user: User = request.user
     training_requests = TrainingRequest.objects.filter(
         user=user, status__in=[TrainingRequestStatus.SENT, TrainingRequestStatus.REVIEWED]
@@ -88,6 +90,8 @@ def requests(request):
 @login_required
 @require_http_methods(["GET", "POST"])
 def create_request(request, tool_id=None):
+    if not TrainingCustomization.get_bool("training_requests_enabled"):
+        return redirect("upcoming_training_events")
     training_request_form = TrainingRequestForm(request.POST or None)
     selected_tool = Tool.objects.filter(pk=training_request_form.data.get("tool") or tool_id).first()
     time_forms = []
