@@ -41,6 +41,7 @@ from NEMO.models import (
     ToolUsageQuestionType,
     ToolUsageQuestions,
     ToolWaitList,
+    TrainingEvent,
     UsageEvent,
     User,
 )
@@ -184,7 +185,8 @@ def tool_status(request, tool_id):
         if ToolCustomization.get_bool("tool_control_note_copy_reservation"):
             dictionary["reservation_note"] = current_reservation.note
 
-    dictionary["next_reservation"] = (
+    dictionary["next_reservation"] = None
+    next_reservation = (
         Reservation.objects.filter(
             start__gt=timezone.now(),
             cancelled=False,
@@ -195,6 +197,15 @@ def tool_status(request, tool_id):
         .order_by("start")
         .first()
     )
+    next_training = (
+        TrainingEvent.objects.filter(start__gt=timezone.now(), tool=tool, cancelled=False).order_by("start").first()
+    )
+    if next_reservation:
+        dictionary["next_reservation"] = next_reservation
+    if next_training:
+        if not next_reservation or next_reservation.start > next_training.start:
+            next_training.user = next_training.trainer  # for it to work with email link to user
+            dictionary["next_reservation"] = next_training
 
     # Staff need the user list to be able to qualify users for the tool.
     if user.is_staff_on_tool(tool):
