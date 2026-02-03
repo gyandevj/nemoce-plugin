@@ -287,7 +287,6 @@ class ToolAdmin(admin.ModelAdmin):
                     "parent_tool",
                     "_category",
                     "_operation_mode",
-                    "qualified_users",
                     "_problem_shutdown_enabled",
                     "_reservation_required",
                     "_logout_grace_period",
