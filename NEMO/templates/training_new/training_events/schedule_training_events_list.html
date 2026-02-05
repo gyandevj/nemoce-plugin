@@ -78,6 +78,9 @@
                         {% endif %}
                     </td>
                     <td class="text-right">
+                        {% if training_request.message %}
+                            {% button icon="glyphicon-info-sign" type="warn" size="small" value="Notes" title=training_request.message|default_if_none:""|linebreaksbr data_toggle="tooltip" %}
+                        {% endif %}
                         {% url 'decline_training_request' training_request.id as decline_training_request_url %}
                         {% url 'create_training_event_for_training_request' training_request.id as create_training_event_for_training_request_url %}
                         {% button type="delete" size="small" value="Reject" icon="glyphicon-ban-circle" onclick="confirm_action('"|concat:decline_training_request_url|concat:"', true, training_callback_success, 'rejecting', 'request', 'Reject this request')" data_toggle="modal" data_target="#confirm-actions" %}
@@ -124,4 +127,6 @@
 	ajax_get('{% url "review_training_request" training_request.id %}');
 		{% endif %}
 	{% endfor %}
+
+	$("[data-toggle='tooltip']").tooltip({html: 'true'});
 </script>

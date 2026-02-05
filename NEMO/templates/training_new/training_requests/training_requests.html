@@ -82,6 +82,9 @@
                                 <td>{{ training_request.get_status_display }}</td>
                                 <td>{{ training_request.project }}</td>
                                 <td class="text-right">
+                                    {% if training_request.message %}
+                                        {% button icon="glyphicon-info-sign" type="warn" size="small" value="Notes" title=training_request.message|default_if_none:""|linebreaksbr data_toggle="tooltip" %}
+                                    {% endif %}
                                     {% url "withdraw_training_request" training_request.id as withdraw_request_url %}
                                     {% button size="small" type="delete" value="Withdraw" onclick="if(confirm('Are you sure you want to withdraw this request?')){window.location='"|concat:withdraw_request_url|concat:"'}" %}
                                 </td>
@@ -108,6 +111,7 @@
 		ajax_get('{% url "review_training_invitation" training_invitation.id %}');
             {% endif %}
         {% endfor %}
-	
+
+		$("[data-toggle='tooltip']").tooltip({html: 'true'});
     </script>
 {% endblock %}
