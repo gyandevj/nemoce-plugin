@@ -81,7 +81,7 @@
                            name="duration"
                            id="duration"
                            type="number"
-                           min="15"
+                           min="{{ customizations|get_item:'calendar_slot_resolution_minutes'|default:15 }}"
                            value="{{ form.duration.value|default_if_none:'' }}"
                            required>
                     <span class="input-group-addon">minutes</span>

@@ -63,7 +63,7 @@ from NEMO.utilities import (
     new_model_copy,
     quiet_int,
 )
-from NEMO.views.customization import UserRequestsCustomization
+from NEMO.views.customization import CalendarCustomization, UserRequestsCustomization
 
 
 class UserForm(ModelForm):
@@ -613,7 +613,7 @@ class TrainingRequestTimeForm(ModelForm):
 
 
 class CalendarTrainingEventForm(ModelForm):
-    duration = IntegerField(min_value=15)
+    duration = IntegerField(min_value=1)
     recurring_training = BooleanField(required=False, initial=False)
     recurrence_interval = IntegerField(required=False)
     recurrence_frequency = ChoiceField(choices=RecurrenceFrequency.choices(), required=False)
@@ -623,6 +623,12 @@ class CalendarTrainingEventForm(ModelForm):
         model = TrainingEvent
         # Start and end will be provided by the calendar function
         exclude = ["creator", "tool", "trainer", "start", "end", "users"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        min_minutes = CalendarCustomization.get_slot_resolution_minutes()
+        self.fields["duration"].min_value = min_minutes
+        self.fields["duration"].widget.attrs["min"] = min_minutes
 
     def clean(self):
         cleaned_data = super().clean()
