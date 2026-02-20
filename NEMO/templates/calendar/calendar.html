@@ -14,7 +14,17 @@
         <div id="sidebar" class="application-sidebar">
             <div class="btn-group sidebar-item">
                 <button type="button" class="btn btn-default dropdown-toggle" style="width:100%" data-toggle="dropdown">
-                    <span id="event_type">Reservations</span>
+                    <span id="event_type">
+                        {% if customizations|get_item:"calendar_default_event_view" == "reservations_and_usage" %}
+                            Reservations and use
+                        {% elif customizations|get_item:"calendar_default_event_view" == "usage" %}
+                            {{ facility_name }} use
+                        {% elif customizations|get_item:"calendar_default_event_view" == "configuration_agenda" %}
+                            Configuration agenda
+                        {% else %}
+                            Reservations
+                        {% endif %}
+                    </span>
                     <span class="caret"></span>
                 </button>
                 <ul class="dropdown-menu">
@@ -390,8 +400,8 @@ function create(start, end, jsEvent, view)
 	let item = $(".selected");
 	{# Only allow reservations to be created when a item has been selected. #}
 	let item_selected = (item != null);
-	{# Only allow selection to proceed when we're in reservation view (instead of use view). #}
-	let reservation_view = get_event_type() === 'reservations';
+	{# Only allow selection to proceed when we're in one of the reservation views (instead of use view). #}
+	let reservation_view = get_event_type() === 'reservations' || get_event_type() === 'reservations and use';
 	{# Users may not create reservations when viewing their personal schedule. #}
 	let personal_schedule = item.hasClass('personal_schedule');
 	let all_tools = item.hasClass('all_tools');
