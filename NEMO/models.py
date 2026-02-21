@@ -1678,28 +1678,13 @@ class Tool(SerializationByNameModel):
     def backup_owners(self) -> QuerySetType[User]:
         return self.parent_tool.backup_owners if self.is_child_tool() else self._backup_owners
 
-    @backup_owners.setter
-    def backup_owners(self, value):
-        self.raise_setter_error_if_child_tool("backup_owners")
-        self._backup_owners = value
-
     @property
     def superusers(self) -> QuerySetType[User]:
         return self.parent_tool.superusers if self.is_child_tool() else self._superusers
 
-    @superusers.setter
-    def superusers(self, value):
-        self.raise_setter_error_if_child_tool("superusers")
-        self._superusers = value
-
     @property
     def staff(self) -> QuerySetType[User]:
         return self.parent_tool.staff if self.is_child_tool() else self._staff
-
-    @staff.setter
-    def staff(self, value):
-        self.raise_setter_error_if_child_tool("staff")
-        self._staff = value
 
     @property
     def adjustment_request_reviewers(self) -> QuerySetType[User]:
@@ -1708,11 +1693,6 @@ class Tool(SerializationByNameModel):
             if self.is_child_tool()
             else self._adjustment_request_reviewers
         )
-
-    @adjustment_request_reviewers.setter
-    def adjustment_request_reviewers(self, value):
-        self.raise_setter_error_if_child_tool("_adjustment_request_reviewers")
-        self._adjustment_request_reviewers = value
 
     @property
     def location(self):
@@ -1799,6 +1779,10 @@ class Tool(SerializationByNameModel):
     def qualification_notification_email(self, value):
         self.raise_setter_error_if_child_tool("qualification_notification_email")
         self._qualification_notification_email = value
+
+    @property
+    def required_resources(self) -> QuerySetType[Resource]:
+        return self.parent_tool.required_resources if self.is_child_tool() else self.required_resource_set
 
     @property
     def requires_area_access(self):
@@ -2112,11 +2096,6 @@ class Tool(SerializationByNameModel):
             if self.is_child_tool()
             else self._shadowing_verification_reviewers
         )
-
-    @shadowing_verification_reviewers.setter
-    def shadowing_verification_reviewers(self, value):
-        self.raise_setter_error_if_child_tool("shadowing_verification_reviewers")
-        self._shadowing_verification_reviewers = value
 
     def apply_grant_access(self, qualification_level: QualificationLevel = None) -> bool:
         return (

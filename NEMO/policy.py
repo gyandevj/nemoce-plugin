@@ -187,9 +187,8 @@ class DefaultNEMOPolicy(BaseNEMOPolicy):
             return HttpResponseBadRequest("The tool is currently being used by " + str(current_usage_event.user) + ".")
 
         # The user must be qualified to use the tool itself, or the parent tool in case of an alternate tool.
-        tool_to_check_qualifications = tool.parent_tool if tool.is_child_tool() else tool
         if not operator.is_staff_on_tool(tool):
-            qualification = Qualification.objects.filter(user=operator, tool=tool_to_check_qualifications).first()
+            qualification = Qualification.objects.filter(user=operator, tool_id=tool.tool_or_parent_id()).first()
             if not qualification:
                 return HttpResponseBadRequest("You are not qualified to use this tool.")
             elif qualification.qualification_level and not qualification.qualification_level.qualify_user:
@@ -204,7 +203,7 @@ class DefaultNEMOPolicy(BaseNEMOPolicy):
             return HttpResponseBadRequest("You must be a staff member to use a tool on another user's behalf.")
 
         # All required resources must be available to operate a tool except for staff or service personnel.
-        unavailable_rss = tool.required_resource_set.filter(available=False).exists()
+        unavailable_rss = tool.required_resources.filter(available=False).exists()
         if unavailable_rss and not operator.is_staff_on_tool(tool) and not operator.is_service_personnel:
             return HttpResponseBadRequest("A resource that is required to operate this tool is unavailable.")
 
@@ -285,14 +284,14 @@ class DefaultNEMOPolicy(BaseNEMOPolicy):
                 missed=False,
                 shortened=False,
                 user=operator,
-                tool=tool,
+                tool_id=tool.tool_or_parent_id(),
             )
             training_for_trainer: QuerySetType[TrainingEvent] = TrainingEvent.objects.filter(
                 start__lt=timezone.now() + tolerance,
                 end__gt=timezone.now(),
                 cancelled=False,
                 trainer=operator,
-                tool=tool,
+                tool_id=tool.tool_or_parent_id(),
             )
             if not (reservation_for_user.exists() or training_for_trainer.exists()):
                 abuse_email_address = EmailsCustomization.get("abuse_email_address")
