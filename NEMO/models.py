@@ -1451,6 +1451,7 @@ class Tool(SerializationByNameModel):
     _grant_access_for_qualification_levels = models.ManyToManyField(
         "QualificationLevel",
         blank=True,
+        verbose_name="grant access for qualification levels",
         help_text="Granting physical access or badge reader access will only apply to the selected qualification levels. If left empty it will apply to all qualification levels.",
     )
     _reservation_horizon = models.PositiveIntegerField(
@@ -1527,10 +1528,12 @@ class Tool(SerializationByNameModel):
     _logout_grace_period = models.PositiveIntegerField(
         null=True,
         blank=True,
+        verbose_name="logout grace period",
         help_text="Number of minutes users have to logout of this tool after their reservation expired before being flagged and abuse email is sent (only applies if reservations are required for this tool).",
     )
     _reservation_required = models.BooleanField(
         db_column="reservation_required",
+        verbose_name="reservation required",
         default=False,
         help_text="Require that users have a current (within 15 minutes) reservation in order to use the tool",
     )
@@ -1568,16 +1571,20 @@ class Tool(SerializationByNameModel):
     )
     # Shadowing Verification Request fields:
     _allow_user_shadowing_verification_request = models.BooleanField(
-        default=False, help_text="Allow users to request qualification on this tool through shadowing verification."
+        default=False,
+        verbose_name="allow user shadowing verification request",
+        help_text="Allow users to request qualification on this tool through shadowing verification.",
     )
     _shadowing_verification_request_qualification_levels = models.ManyToManyField(
         "QualificationLevel",
         blank=True,
+        verbose_name="shadowing verification request qualification levels",
         related_name="shadowing_verification_request_qualification_levels",
         help_text="Qualification Levels that users can request on this tool through shadowing verification.",
     )
     _shadowing_verification_reviewers = models.ManyToManyField(
         User,
+        verbose_name="shadowing verification reviewers",
         db_table="NEMO_tool_shadowing_verification_reviewers",
         blank=True,
         related_name="shadowing_verification_reviewer_on_tools",
