@@ -50,6 +50,8 @@
                                                 <span class="badge active">{{ notification_except_training|add:training_request_notification_count }}</span>
                                             {% elif not user|is_trainer and training_invitation_notification_count %}
                                                 <span class="badge active">{{ notification_except_training|add:training_invitation_notification_count }}</span>
+                                            {% else %}
+                                                <span class="badge active">{{ notification_except_training }}</span>
                                             {% endif %}
                                         {% endif %}
                                     {% else %}
