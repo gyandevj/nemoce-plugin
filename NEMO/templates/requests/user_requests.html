@@ -183,6 +183,11 @@
             {% if tab == 'adjustment' %}load_adjustment_requests(0);{% endif %}
             {% if tab == 'staff_assistance' %}load_staff_assistance_requests();{% endif %}
 			{% if tab == 'training' %}load_training_requests();{% endif %}
+			console.log({{ user.is_any_part_of_staff|yesno:"true,false" }})
+			{% if user.is_any_part_of_staff and adjustment_request_allowed and not facility_managers_exist %}
+				hide_spinner();
+                alert('No facility managers exist. Please add at least one facility manager in detailed administration.');
+            {% endif %}
         });
     </script>
 {% endblock %}

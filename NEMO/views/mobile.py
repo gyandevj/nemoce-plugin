@@ -63,15 +63,21 @@ def new_reservation(request, item_type, item_id, date=None):
     item_type = ReservationItemType(item_type)
     item = get_object_or_404(item_type.get_object_class(), id=item_id)
 
+    trainings = []
+    if item_type == ReservationItemType.TOOL:
+        trainings = list(TrainingEvent.objects.filter(tool=item, cancelled=False, start__gte=timezone.now()))
+
     dictionary = {
         "item": item,
         "item_type": item_type.value,
         "date": parse_date(date) if date else None,
+        "calendar_slot_duration": CalendarCustomization.get_slot_resolution_minutes(),
         "item_reservation_times": list(
             Reservation.objects.filter(**{item_type.value: item}).filter(
                 cancelled=False, missed=False, shortened=False, start__gte=timezone.now()
             )
-        ),
+        )
+        + trainings,
     }
 
     return render(request, "mobile/new_reservation.html", dictionary)
