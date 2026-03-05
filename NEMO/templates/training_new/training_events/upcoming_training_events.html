@@ -56,6 +56,16 @@
                     </option>
                 {% endfor %}
             </select>
+            <div class="checkbox" style="margin-left: 15px">
+                <label for="cancelled_filter">
+                    <input id="cancelled_filter"
+                           onchange="filter_requests(this)"
+                           type="checkbox"
+                           value="true"
+                           {% if include_cancelled_trainings %}checked{% endif %} />
+                    include cancelled
+                </label>
+            </div>
         </div>
     </div>
     {% if training_events or past_training_events %}
@@ -146,11 +156,11 @@
 		{
             if (element.id === "tool_category_filter")
             {
-                window.location.href = "?tool_category=" + $("#tool_category_filter").val() + "&trainer=" + $("#trainer_filter").val() + "&date=" + $("#date_filter").val();
+                window.location.href = "?tool_category=" + $("#tool_category_filter").val() + "&trainer=" + $("#trainer_filter").val() + "&date=" + $("#date_filter").val() + "&include_cancelled=" + $("#cancelled_filter").prop("checked");
 			}
             else
             {
-                window.location.href = "?tool=" + $("#tool_filter").val() + "&trainer=" + $("#trainer_filter").val() + "&date=" + $("#date_filter").val();
+                window.location.href = "?tool=" + $("#tool_filter").val() + "&trainer=" + $("#trainer_filter").val() + "&date=" + $("#date_filter").val() + "&include_cancelled=" + $("#cancelled_filter").prop("checked");
             }
 		}
     </script>

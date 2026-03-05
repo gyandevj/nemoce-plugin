@@ -381,6 +381,9 @@ def get_upcoming_events_context(request) -> Dict:
     if trainer_filter != "all-trainers":
         training_events = training_events.filter(trainer_id=trainer_filter)
     date_filter = request.GET.get("date", "all-dates")
+    include_cancelled_trainings = request.GET.get("include_cancelled", "false") == "true"
+    if not include_cancelled_trainings:
+        training_events = training_events.filter(cancelled=False)
     if date_filter and date_filter != "all-dates":
         parsed_date = datetime.strptime(date_filter, date_input_format)
         requests_to_exclude = []
@@ -402,6 +405,7 @@ def get_upcoming_events_context(request) -> Dict:
         "trainers": trainers,
         "selected_date": date_filter,
         "dates": dates,
+        "include_cancelled_trainings": include_cancelled_trainings,
     }
 
 
