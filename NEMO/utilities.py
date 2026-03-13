@@ -948,6 +948,7 @@ def create_ics(
     organizer: User = None,
     cancelled: bool = False,
     description: str = None,
+    location: str = None,
 ) -> MIMEBase:
     from NEMO.views.customization import ApplicationCustomization
 
@@ -981,6 +982,10 @@ def create_ics(
         f"DTSTAMP:{now}\n",
         f"DTSTART:{start}\n",
         f"DTEND:{end}\n",
+    ]
+    if location:
+        lines.append(f"LOCATION:{location}\n")
+    lines += [
         f'ATTENDEE;CN="{user_name}";RSVP=TRUE:mailto:{user_email}\n',
         f'ORGANIZER;CN="{organizer}":mailto:{organizer_email}\n',
         f"SUMMARY:[{site_title}] {event_name}\n",

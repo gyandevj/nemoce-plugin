@@ -880,6 +880,7 @@ def send_email_training_session_cancelled(training_event: TrainingEvent, request
                         training_event.end,
                         user,
                         organizer=training_event.trainer,
+                        location=training_event.location,
                         cancelled=True,
                     )
                 ]
@@ -966,6 +967,7 @@ def send_ics(training: TrainingEvent, user, cancelled=False):
         organizer=trainer,
         cancelled=cancelled,
         description=training.message,
+        location=training.location,
     )
     # Check if this is sent to the trainer by himself, in which case we need to remove him as organizer in ICS
     if user == trainer:
@@ -979,6 +981,7 @@ def send_ics(training: TrainingEvent, user, cancelled=False):
                 training_extra_email_address,
                 cancelled=cancelled,
                 description=training.message,
+                location=training.location,
             )
             send_mail(
                 subject=event_name,
@@ -996,6 +999,7 @@ def send_ics(training: TrainingEvent, user, cancelled=False):
             trainer,
             cancelled=cancelled,
             description=training.message,
+            location=training.location,
         )
     if should_send_ics(user, cancelled):
         user.email_user(
