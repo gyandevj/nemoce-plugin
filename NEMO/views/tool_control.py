@@ -202,6 +202,7 @@ def tool_status(request, tool_id):
     if next_training:
         if not next_reservation or next_reservation.start > next_training.start:
             next_training.user = next_training.trainer  # for it to work with email link to user
+            next_training.user_id = next_training.trainer_id  # for it to work with email link to user
             dictionary["next_reservation"] = next_training
 
     # Staff need the user list to be able to qualify users for the tool.
