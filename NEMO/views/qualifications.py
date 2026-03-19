@@ -33,7 +33,7 @@ def qualifications(request):
     tool_groups = ToolQualificationGroup.objects.all()
     qualification_levels = QualificationLevel.objects.all()
 
-    if not request.user.is_staff:
+    if not request.user.is_any_part_of_staff:
         # Staff on tools can only use their tools
         tools = tools.filter(_staff__in=[request.user])
         # Staff on tools can only use groups if they are staff for all those
@@ -78,7 +78,7 @@ def modify_qualifications(request):
         ]
     )
     tools = Tool.objects.in_bulk(tools)
-    if not request.user.is_staff and not set(tools).issubset(
+    if not request.user.is_any_part_of_staff and not set(tools).issubset(
         set(request.user.staff_for_tools.values_list("id", flat=True))
     ):
         return HttpResponseBadRequest("You cannot qualify for a tool you are not staff for.")
