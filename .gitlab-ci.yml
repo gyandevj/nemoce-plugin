@@ -118,6 +118,65 @@ Test python 3.13 postgres 17:
     - name: postgres:17
       alias: postgres
 
+.test_oracle: &test_oracle
+  stage: test
+  image: python:3.11
+  variables:
+    DATABASE_ENGINE: "django.db.backends.oracle"
+    DATABASE_HOST: ""
+    DATABASE_PORT: ""
+    DATABASE_NAME: "oracle:1521/PDB1"
+    DATABASE_USER: "test_user"
+    DATABASE_PASSWORD: "test_password"
+    # Variables specifically used by the gvenzl/oracle-free container to initialize
+    ORACLE_PASSWORD: "sys_password"
+    ORACLE_DATABASE: "PDB1"
+    APP_USER: $DATABASE_USER
+    APP_USER_PASSWORD: $DATABASE_PASSWORD
+  before_script:
+    # Install the Oracle Python driver (defaults to Thin mode, which is perfect for CI)
+    - python -m pip install "oracledb<3.4.0"
+    # Wait for Oracle to be ready and grant DBA privileges to the test user
+    - |
+      python -c "
+      import oracledb, time, sys
+      print('Waiting for Oracle database...')
+      for _ in range(60):
+          try:
+              # 1. Connect as SYSTEM (the built-in Oracle admin) using your EZConnect string
+              admin_conn = oracledb.connect(user='SYSTEM', password='$ORACLE_PASSWORD', dsn='$DATABASE_NAME')
+      
+              # 2. Grant full DBA privileges to the test user so Django can create test schemas
+              cursor = admin_conn.cursor()
+              cursor.execute('GRANT DBA TO $DATABASE_USER')
+      
+              print('Database ready and DBA privileges granted!')
+              sys.exit(0)
+          except Exception:
+              time.sleep(3)
+      print('Timeout waiting for database')
+      sys.exit(1)
+      "
+  script:
+    - cd NEMO
+    - sed -i '1s/^/import sys, oracledb\nsys.modules["cx_Oracle"] = oracledb\n/' NEMO/tests/test_settings.py
+    - python -m pip install ./
+    - python ./run_tests.py
+
+
+Test python 3.11 oracle 21:
+  <<: *test_oracle
+  services:
+    - name: gvenzl/oracle-xe:21-faststart
+      alias: oracle
+
+
+Test python 3.11 oracle 23:
+  <<: *test_oracle
+  services:
+    - name: gvenzl/oracle-free:23-faststart
+      alias: oracle
+
 
 NEMO-CE dev build:
   stage: build
