@@ -141,7 +141,7 @@ Test python 3.13 postgres 17:
       python -c "
       import oracledb, time, sys
       print('Waiting for Oracle database...')
-      for _ in range(60):
+      for _ in range(90):
           try:
               # 1. Connect as SYSTEM (the built-in Oracle admin) using your EZConnect string
               admin_conn = oracledb.connect(user='SYSTEM', password='$ORACLE_PASSWORD', dsn='$DATABASE_NAME')
@@ -158,7 +158,8 @@ Test python 3.13 postgres 17:
       sys.exit(1)
       "
   script:
-    - sed -i '1s/^/import sys, oracledb\nsys.modules["cx_Oracle"] = oracledb\n/' tests/test_settings.py
+    - ls
+    - sed -i '1s/^/import sys, oracledb\nsys.modules["cx_Oracle"] = oracledb\n/' NEMO/tests/test_settings.py
     - python -m pip install ./
     - python ./run_tests.py
 
