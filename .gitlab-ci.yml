@@ -163,11 +163,12 @@ Test python 3.13 postgres 17:
     - python ./run_tests.py
 
 
-Test python 3.11 oracle 21:
-  <<: *test_oracle
-  services:
-    - name: gvenzl/oracle-xe:21-slim-faststart
-      alias: oracle
+# Oracle 21 is too heavy for gitlab shared runners
+#Test python 3.11 oracle 21:
+#  <<: *test_oracle
+#  services:
+#    - name: gvenzl/oracle-xe:21-slim-faststart
+#      alias: oracle
 
 
 Test python 3.11 oracle 23:
