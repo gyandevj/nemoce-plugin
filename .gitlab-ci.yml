@@ -166,7 +166,7 @@ Test python 3.13 postgres 17:
 Test python 3.11 oracle 21:
   <<: *test_oracle
   services:
-    - name: gvenzl/oracle-xe:21-faststart
+    - name: gvenzl/oracle-xe:21-slim-faststart
       alias: oracle
 
 
