@@ -158,7 +158,6 @@ Test python 3.13 postgres 17:
       sys.exit(1)
       "
   script:
-    - ls
     - sed -i '1s/^/import sys, oracledb\nsys.modules["cx_Oracle"] = oracledb\n/' NEMO/tests/test_settings.py
     - python -m pip install ./
     - python ./run_tests.py
