@@ -72,7 +72,7 @@ def get_training_dictionary(request):
         "qualification_levels": QualificationLevel.objects.all(),
         "techniques": TrainingTechnique.objects.all(),
         "duration": usage_event.duration_minutes() if usage_event else None,
-        "date": usage_event.end if usage_event else None,
+        "date": usage_event.end.astimezone() if usage_event else None,
         "usage_event": usage_event,
     }
     return dictionary
