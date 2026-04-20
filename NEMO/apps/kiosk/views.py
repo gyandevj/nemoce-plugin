@@ -51,7 +51,7 @@ from NEMO.views.consumables import (
 from NEMO.views.customization import (
     ApplicationCustomization,
     CalendarCustomization,
-    ToolCustomization,
+    ToolControlCustomization,
     UserCustomization,
 )
 from NEMO.views.get_projects import get_projects
@@ -538,7 +538,7 @@ def tool_information(request, tool_id, user_id, back):
     virtual_inputs = request.GET.get("virtual_inputs") != "false"
     tool = Tool.objects.get(id=tool_id, visible=True)
     customer = User.objects.get(id=user_id)
-    allow_take_over = ToolCustomization.get_bool("tool_control_allow_take_over")
+    allow_take_over = ToolControlCustomization.get_bool("tool_control_allow_take_over")
     wait_list = tool.current_wait_list()
     user_wait_list_entry = wait_list.filter(user=user_id).first()
     user_wait_list_position = (
@@ -554,7 +554,7 @@ def tool_information(request, tool_id, user_id, back):
         else 0
     )
     tool_credentials = []
-    if ToolCustomization.get_bool("tool_control_show_tool_credentials") and (
+    if ToolControlCustomization.get_bool("tool_control_show_tool_credentials") and (
         customer.is_staff_on_tool(tool) or customer.is_facility_manager
     ):
         if customer.is_facility_manager:
@@ -575,7 +575,7 @@ def tool_information(request, tool_id, user_id, back):
             post_usage_questions.render(virtual_inputs=virtual_inputs) if post_usage_questions else ""
         ),
         "back": back,
-        "tool_control_show_task_details": ToolCustomization.get_bool("tool_control_show_task_details"),
+        "tool_control_show_task_details": ToolControlCustomization.get_bool("tool_control_show_task_details"),
         "allow_take_over": allow_take_over,
         "enable_is_take_over": tool.in_use
         and allow_take_over
@@ -611,7 +611,7 @@ def tool_information(request, tool_id, user_id, back):
         # Staff are exempt from reservation shortening.
         if remaining_reservation_duration > 2:
             dictionary["remaining_reservation_duration"] = remaining_reservation_duration
-        if ToolCustomization.get_bool("tool_control_note_copy_reservation"):
+        if ToolControlCustomization.get_bool("tool_control_note_copy_reservation"):
             dictionary["reservation_note"] = current_reservation.note
 
     return render(request, "kiosk/tool_information.html", dictionary)

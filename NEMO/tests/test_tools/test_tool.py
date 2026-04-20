@@ -25,7 +25,7 @@ from NEMO.models import (
 )
 from NEMO.tests.test_utilities import NEMOTestCaseMixin, create_user_and_project, login_as
 from NEMO.utilities import get_class_from_settings
-from NEMO.views.customization import ToolCustomization
+from NEMO.views.customization import ToolControlCustomization, ToolCustomization
 
 tool: Optional[Tool] = None
 alternate_tool: Optional[Tool] = None
@@ -258,7 +258,7 @@ class ToolTestCase(NEMOTestCaseMixin, TestCase):
         # make the tool operational
         tool.operational = True
         tool.save()
-        ToolCustomization.set("tool_control_allow_take_over", "")
+        ToolControlCustomization.set("tool_control_allow_take_over", "")
         # User one start using tool
         response, user_one = self.login_as_user_and_enable_tool(tool, 11)
         self.assertEqual(response.status_code, 200, response.content.decode())
@@ -276,7 +276,7 @@ class ToolTestCase(NEMOTestCaseMixin, TestCase):
         # make the tool operational
         tool.operational = True
         tool.save()
-        ToolCustomization.set("tool_control_allow_take_over", "enabled")
+        ToolControlCustomization.set("tool_control_allow_take_over", "enabled")
         # User one start using tool
         response, user_one = self.login_as_user_and_enable_tool(tool, 11)
         self.assertEqual(response.status_code, 200, response.content.decode())
@@ -292,7 +292,7 @@ class ToolTestCase(NEMOTestCaseMixin, TestCase):
         # make the tool operational
         tool.operational = True
         tool.save()
-        ToolCustomization.set("tool_control_allow_take_over", "")
+        ToolControlCustomization.set("tool_control_allow_take_over", "")
         # User one start using tool
         response, user_one = self.login_as_user_and_enable_tool(tool, 11)
         self.assertEqual(response.status_code, 200, response.content.decode())
@@ -311,7 +311,7 @@ class ToolTestCase(NEMOTestCaseMixin, TestCase):
         # make the tool operational
         tool.operational = True
         tool.save()
-        ToolCustomization.set("tool_control_allow_take_over", "")
+        ToolControlCustomization.set("tool_control_allow_take_over", "")
         # User one start using tool
         response, user_one = self.login_as_user_and_enable_tool(tool, 11)
         self.assertEqual(response.status_code, 200, response.content.decode())
@@ -330,7 +330,7 @@ class ToolTestCase(NEMOTestCaseMixin, TestCase):
         # make the tool operational
         tool.operational = True
         tool.save()
-        ToolCustomization.set("tool_control_allow_take_over", "")
+        ToolControlCustomization.set("tool_control_allow_take_over", "")
         # User one start using tool
         response, user_one = self.login_as_user_and_enable_tool(tool, 11)
         self.assertEqual(response.status_code, 200, response.content.decode())

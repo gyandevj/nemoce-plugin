@@ -29,7 +29,11 @@ from NEMO.utilities import (
     send_mail,
     split_into_chunks,
 )
-from NEMO.views.customization import ApplicationCustomization, ToolCustomization, get_media_file_contents
+from NEMO.views.customization import (
+    ApplicationCustomization,
+    ToolControlCustomization,
+    get_media_file_contents,
+)
 
 logger = getLogger(__name__)
 
@@ -203,7 +207,6 @@ def export_email_addresses(request):
         if not send_to_expired_access_users:
             users = [user for user in users if not user.has_access_expired()]
         for user in users:
-            user: User = user
             for email in user.get_emails(user.get_preferences().email_send_broadcast_emails):
                 writer.writerow(
                     [
@@ -399,8 +402,10 @@ def get_users_for_email(audience: str, selection: List, no_type: bool) -> (Query
 
 def check_user_allowed(user: User, audience: str, selection: str) -> Optional[str]:
     if not user.is_any_part_of_staff:
-        tool_qualified_broadcast = ToolCustomization.get_bool("tool_control_broadcast_qualified_users")
-        allow_broadcast_upcoming_reservation = ToolCustomization.get("tool_control_broadcast_upcoming_reservation")
+        tool_qualified_broadcast = ToolControlCustomization.get_bool("tool_control_broadcast_qualified_users")
+        allow_broadcast_upcoming_reservation = ToolControlCustomization.get(
+            "tool_control_broadcast_upcoming_reservation"
+        )
         if not (tool_qualified_broadcast and audience == "tool") and not (
             allow_broadcast_upcoming_reservation and audience == "tool-reservation"
         ):

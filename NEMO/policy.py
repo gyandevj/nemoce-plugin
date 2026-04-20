@@ -62,6 +62,7 @@ from NEMO.views.customization import (
     ApplicationCustomization,
     EmailsCustomization,
     ToolCustomization,
+    ToolControlCustomization,
     get_media_file_contents,
 )
 
@@ -173,7 +174,7 @@ class DefaultNEMOPolicy(BaseNEMOPolicy):
         """
         facility_name = ApplicationCustomization.get("facility_name")
         site_title = ApplicationCustomization.get("site_title")
-        allow_take_over = ToolCustomization.get_bool("tool_control_allow_take_over")
+        allow_take_over = ToolControlCustomization.get_bool("tool_control_allow_take_over")
 
         # The tool must be visible (or the parent if it's a child tool) to users.
         visible = tool.parent_tool.visible if tool.is_child_tool() else tool.visible
@@ -370,8 +371,8 @@ class DefaultNEMOPolicy(BaseNEMOPolicy):
     def check_to_disable_tool(self, tool: Tool, operator: User, downtime) -> HttpResponse:
         """Check that the user is allowed to disable the tool."""
         current_usage_event = tool.get_current_usage_event()
-        force_off = ToolCustomization.get_bool("tool_control_ongoing_reservation_force_off")
-        allow_take_over = ToolCustomization.get_bool("tool_control_allow_take_over")
+        force_off = ToolControlCustomization.get_bool("tool_control_ongoing_reservation_force_off")
+        allow_take_over = ToolControlCustomization.get_bool("tool_control_allow_take_over")
 
         ongoing_reservation = Reservation.objects.filter(
             tool=tool,
