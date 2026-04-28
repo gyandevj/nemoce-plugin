@@ -102,6 +102,7 @@ def tool_status(request, tool_id):
     tool = get_object_or_404(Tool, id=tool_id, visible=True)
     qualification_levels = QualificationLevel.objects.all()
     qualifications = Qualification.objects.filter(tool=tool)
+    current_usage_event = tool.get_current_usage_event()
     user_is_qualified = tool.user_set.filter(id=request.user.id).exists()
     broadcast_upcoming_reservation = ToolControlCustomization.get("tool_control_broadcast_upcoming_reservation")
     broadcast_qualified_user_enabled = ToolControlCustomization.get_bool("tool_control_broadcast_qualified_users")
@@ -157,15 +158,16 @@ def tool_status(request, tool_id):
         "show_wait_list": (
             tool.allow_wait_list()
             and (
-                not (
-                    tool.get_current_usage_event().operator.id == user.id
-                    or tool.get_current_usage_event().user.id == user.id
-                )
-                if tool.in_use()
+                not (current_usage_event.operator_id == user.id or current_usage_event.user_id == user.id)
+                if current_usage_event
                 else wait_list.count() > 0
             )
         ),
     }
+
+    reservation_user = user
+    if current_usage_event and current_usage_event.operator_id == user.id:
+        reservation_user = current_usage_event.user
 
     current_reservation = Reservation.objects.filter(
         start__lt=timezone.now(),
@@ -173,7 +175,7 @@ def tool_status(request, tool_id):
         cancelled=False,
         missed=False,
         shortened=False,
-        user=user,
+        user=reservation_user,
         tool=tool,
     ).last()
     if current_reservation:
@@ -605,7 +607,11 @@ def do_disable(tool, downtime, staff_shortening, bypass_interlock, take_over, re
     # Shorten the user's tool reservation since we are now done using the tool
     current_usage_event = tool.get_current_usage_event()
     shorten_reservation(
-        user=current_usage_event.user, item=tool, new_end=timezone.now() + downtime, force=staff_shortening
+        user=user,
+        reservation_user=current_usage_event.user,
+        item=tool,
+        new_end=timezone.now() + downtime,
+        force=staff_shortening,
     )
 
     # End the current usage event for the tool

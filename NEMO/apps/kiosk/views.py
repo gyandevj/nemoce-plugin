@@ -186,7 +186,11 @@ def do_disable_tool(tool, customer, downtime, staff_shortening, bypass_interlock
     # Shorten the user's tool reservation since we are now done using the tool
     current_usage_event = tool.get_current_usage_event()
     shorten_reservation(
-        user=current_usage_event.user, item=tool, new_end=timezone.now() + downtime, force=staff_shortening
+        user=customer,
+        reservation_user=current_usage_event.user,
+        item=tool,
+        new_end=timezone.now() + downtime,
+        force=staff_shortening,
     )
 
     # End the current usage event for the tool and save it.
@@ -539,6 +543,7 @@ def tool_information(request, tool_id, user_id, back):
     tool = Tool.objects.get(id=tool_id, visible=True)
     customer = User.objects.get(id=user_id)
     allow_take_over = ToolControlCustomization.get_bool("tool_control_allow_take_over")
+    current_usage_event = tool.get_current_usage_event()
     wait_list = tool.current_wait_list()
     user_wait_list_entry = wait_list.filter(user=user_id).first()
     user_wait_list_position = (
@@ -586,23 +591,23 @@ def tool_information(request, tool_id, user_id, back):
         "show_wait_list": (
             tool.allow_wait_list()
             and (
-                not (
-                    tool.get_current_usage_event().operator.id == customer.id
-                    or tool.get_current_usage_event().user.id == customer.id
-                )
-                if tool.in_use()
+                not (current_usage_event.operator_id == customer.id or current_usage_event.user_id == customer.id)
+                if current_usage_event
                 else wait_list.count() > 0
             )
         ),
     }
 
+    reservation_user = customer
+    if current_usage_event and current_usage_event.operator_id == customer.id:
+        reservation_user = current_usage_event.user
     current_reservation = Reservation.objects.filter(
         start__lt=timezone.now(),
         end__gt=timezone.now(),
         cancelled=False,
         missed=False,
         shortened=False,
-        user=customer,
+        user=reservation_user,
         tool=tool,
     ).last()
     if current_reservation:
