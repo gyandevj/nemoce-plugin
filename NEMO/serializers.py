@@ -53,6 +53,7 @@ from NEMO.models import (
     Reservation,
     ReservationQuestions,
     Resource,
+    ResourceCategory,
     ScheduledOutage,
     StaffAssistanceRequest,
     StaffCharge,
@@ -511,11 +512,18 @@ class StaffChargeSerializer(FlexFieldsSerializerMixin, ModelSerializer):
         }
 
 
+class ResourceCategorySerializer(ModelSerializer):
+    class Meta:
+        model = ResourceCategory
+        fields = "__all__"
+
+
 class ResourceSerializer(FlexFieldsSerializerMixin, ModelSerializer):
     class Meta:
         model = Resource
         fields = "__all__"
         expandable_fields = {
+            "category": "NEMO.serializers.ResourceCategorySerializer",
             "fully_dependent_tools": ("NEMO.serializers.ToolSerializer", {"many": True}),
             "partially_dependent_tools": ("NEMO.serializers.ToolSerializer", {"many": True}),
             "dependent_areas": ("NEMO.serializers.AreaSerializer", {"many": True}),
