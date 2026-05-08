@@ -23,6 +23,7 @@ from NEMO.exceptions import (
     ProjectChargeException,
     ReservationRequiredUserError,
     ScheduledOutageInProgressError,
+    TrainingRequiredUserError,
     UnavailableResourcesUserError,
 )
 from NEMO.models import (
@@ -1241,6 +1242,9 @@ class DefaultNEMOPolicy(BaseNEMOPolicy):
         """
         if not user.is_active:
             raise InactiveUserError(user=user)
+
+        if user.training_required:
+            raise TrainingRequiredUserError(user=user)
 
         if user.active_project_count() < 1:
             raise NoActiveProjectsForUserError(user=user)
