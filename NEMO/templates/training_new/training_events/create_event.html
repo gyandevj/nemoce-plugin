@@ -467,6 +467,9 @@
                 useCurrent: false
             });
             let auto_cancel_picker = auto_cancel_jq.data("DateTimePicker");
+			let recurrence_until_jq = $("#recurrence_until");
+			recurrence_until_jq.datetimepicker({format: '{{ date_input_js_format }}', useCurrent: false});
+			let recurrence_until_picker = recurrence_until_jq.data("DateTimePicker");
 			start_jq.datetimepicker(timepicker_properties);
 			start_jq.on("dp.change", function (e) {
                 let picker = $('#start').data("DateTimePicker");
@@ -477,15 +480,9 @@
                 {% if auto_cancel_hours %}
                     auto_cancel_picker.date(e.date.subtract({{ auto_cancel_hours }}, 'hours'));
                 {% endif %}
-            });
-			let recurrence_until_jq = $("#recurrence_until");
-			recurrence_until_jq.datetimepicker({format: '{{ date_input_js_format }}', useCurrent: false});
-			let recurrence_until_picker = recurrence_until_jq.data("DateTimePicker");
-			start_jq.on("dp.change", function (e)
-			{
 				recurrence_until_picker.minDate(e.date);
-				recurrence_until_picker.maxDate(moment(e.date).add({{ calendar_training_recurrence_limit }}, 'days').toDate());
-			});
+				recurrence_until_picker.maxDate(moment(e.date).add('{{ customizations|get_item:"calendar_training_recurrence_limit" }}', 'days').toDate());
+            });
 			{% for user in invited_users %}
 				add_invited_user('{{ user }}', '{{ user.id }}');
 			{% endfor %}

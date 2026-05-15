@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta
-from typing import Union
+from datetime import datetime, time, date, timedelta
+from typing import Optional, Union
 
 from django.contrib.admin.widgets import FilteredSelectMultiple
 from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
@@ -19,6 +19,7 @@ from django.forms import (
     ModelMultipleChoiceField,
 )
 from django.forms.utils import ErrorDict, ErrorList
+from django.http import HttpResponse
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -634,7 +635,7 @@ class CalendarTrainingEventForm(ModelForm):
         cleaned_data = super().clean()
         errors = {}
         recurring_training = cleaned_data.get("recurring_training", False)
-        recurrence_until = cleaned_data.get("recurrence_until")
+        recurrence_until: date = cleaned_data.get("recurrence_until")
         recurrence_frequency = cleaned_data.get("recurrence_frequency")
         recurrence_interval = cleaned_data.get("recurrence_interval")
         if recurring_training:
@@ -646,6 +647,29 @@ class CalendarTrainingEventForm(ModelForm):
                 errors["recurrence_frequency"] = _("This field is required.")
             if not recurrence_until:
                 errors["recurrence_until"] = _("This field is required.")
+            else:
+                start_date: datetime = cleaned_data.get("start")
+                if start_date:
+                    days = (recurrence_until - start_date.date()).days
+                    if days > CalendarCustomization.get_int("calendar_training_recurrence_limit"):
+                        raise ValidationError(
+                            {
+                                "recurrence_until": _("Recurrence limit cannot exceed {} days from the start").format(
+                                    CalendarCustomization.get("calendar_training_recurrence_limit")
+                                )
+                            }
+                        )
+                elif self.instance.start:
+                    days = (recurrence_until - self.instance.start.date()).days
+                    if days > CalendarCustomization.get_int("calendar_training_recurrence_limit"):
+                        raise ValidationError(
+                            {
+                                "recurrence_until": _("Recurrence limit cannot exceed {} days from the start").format(
+                                    CalendarCustomization.get("calendar_training_recurrence_limit")
+                                )
+                            }
+                        )
+
         if errors:
             raise ValidationError(errors)
         return cleaned_data
@@ -665,7 +689,7 @@ def save_scheduled_outage(
     end: datetime = None,
     title: str = None,
     check_policy=True,
-):
+) -> Optional[HttpResponse]:
     outage: ScheduledOutage = form.save(commit=False)
     outage.creator = creator
     outage.outage_item = item
@@ -706,6 +730,7 @@ def save_scheduled_outage(
             new_outage.save()
     else:
         outage.save()
+    return None
 
 
 def nice_errors(obj, non_field_msg="General form errors") -> ErrorDict:

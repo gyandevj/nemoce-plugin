@@ -554,7 +554,6 @@ def create_event(request, tool_id=None, training_event_id=None, request_time_id=
         "training_details": tool_training_details,
         "invited_users": invited_users,
         "recurrence_intervals": RecurrenceFrequency.choices(),
-        "calendar_training_recurrence_limit": CalendarCustomization.get("calendar_training_recurrence_limit"),
         "selected_qualification_levels": qualification_levels,
         "suggested_users": suggested_users_to_invite(selected_tool).difference(invited_users),
         "suggested_times": suggested_times_for_training(selected_tool, timedelta(minutes=(initial["duration"] or 0))),

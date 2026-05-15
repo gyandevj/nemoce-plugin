@@ -1403,7 +1403,6 @@ def create_training_event(request):
             "training_details": training_details,
             "suggested_users": suggested_users_to_invite(tool),
             "recurrence_intervals": RecurrenceFrequency.choices(),
-            "calendar_training_recurrence_limit": CalendarCustomization.get("calendar_training_recurrence_limit"),
             "recurrence_date_start": start.date(),
             "selected_qualification_levels": qualification_levels,
             "selected_invitees": invited_users,
