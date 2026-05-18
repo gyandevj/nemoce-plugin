@@ -322,7 +322,7 @@
 	$('#recurrence_until').datetimepicker({
 		format: '{{ date_input_js_format }}',
 		useCurrent: false,
-		maxDate: moment('{{ recurrence_date_start|input_date_format }}', '{{ date_input_js_format }}').add({{ calendar_training_recurrence_limit }}, 'days').toDate(),
+		maxDate: moment('{{ recurrence_date_start|input_date_format }}', '{{ date_input_js_format }}').add('{{ customizations|get_item:"calendar_training_recurrence_limit" }}', 'days').toDate(),
 		minDate: moment('{{ recurrence_date_start|input_date_format }}', '{{ date_input_js_format }}')
     });
 	$('#dialog .modal-dialog').addClass('modal-lg');
