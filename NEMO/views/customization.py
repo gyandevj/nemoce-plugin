@@ -422,6 +422,7 @@ class CalendarCustomization(CustomizationBase):
         "calendar_outage_recurrence_limit": "90",
         "calendar_training_recurrence_limit": "90",
         "calendar_qualified_tools": "",
+        "calendar_tool_category_filter": "",
         "calendar_configuration_in_reservations": "",
         "calendar_status_bar_show_tool_reservation_policy": "enabled",
         "calendar_status_bar_show_tool_pinned_comments": "enabled",
