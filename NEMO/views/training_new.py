@@ -143,7 +143,7 @@ def create_request(request, tool_id=None):
                 training_request.replace_times([time_form.instance for time_form in time_forms])
                 send_email_training_request_received(training_request, request)
                 return redirect("training_requests") if request.device == "mobile" else HttpResponse()
-    for requested_time in TrainingRequestTime.objects.filter(training_request=training_request_form.instance):
+    for requested_time in TrainingRequestTime.objects.filter(training_request_id=training_request_form.instance.id):
         time_forms.append(TrainingRequestTimeForm(instance=requested_time))
     dictionary["time_forms"] = time_forms
     return render(request, "training_new/training_requests/create_request.html", dictionary)
