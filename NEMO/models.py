@@ -2066,7 +2066,7 @@ class Tool(SerializationByNameModel):
         return self.operation_mode in [self.OperationMode.REGULAR, self.OperationMode.HYBRID]
 
     def current_wait_list(self):
-        return ToolWaitList.objects.filter(tool=self, expired=False, deleted=False).order_by("date_entered")
+        return ToolWaitList.objects.filter(tool_id=self.id, expired=False, deleted=False).order_by("date_entered")
 
     def top_wait_list_entry(self):
         return self.current_wait_list().first()
@@ -5385,11 +5385,14 @@ class ScheduledOutage(BaseModel):
 
 
 class UnplannedOutage(BaseModel):
-    tool = models.ForeignKey(Tool, on_delete=models.CASCADE)
+    tool = models.ForeignKey(Tool, null=True, blank=True, on_delete=models.CASCADE)
+    resource = models.ForeignKey(Resource, null=True, blank=True, on_delete=models.CASCADE)
     start = models.DateTimeField()
     end = models.DateTimeField(blank=True, null=True)
 
     def clean(self):
+        if not self.tool_id and not self.resource_id:
+            raise ValidationError("Either tool or resource must be specified for an unplanned outage")
         if self.start and self.end and self.start >= self.end:
             raise ValidationError(
                 {
@@ -5402,7 +5405,7 @@ class UnplannedOutage(BaseModel):
             )
 
     def __str__(self):
-        return f"{self.tool} unplanned outage"
+        return f"{self.tool or self.resource} unplanned outage"
 
 
 class News(BaseModel):
@@ -6299,6 +6302,16 @@ def track_tool_operational_status(sender, instance: Tool, **kwargs):
     if instance.operational and tool_down:
         tool_down.end = timezone.now()
         tool_down.save()
+
+
+@receiver(models.signals.post_save, sender=Resource)
+def track_resource_availability_status(sender, instance: Resource, **kwargs):
+    resource_down = UnplannedOutage.objects.filter(resource=instance, end__isnull=True).first()
+    if not instance.available and not resource_down:
+        UnplannedOutage.objects.create(resource=instance, start=timezone.now())
+    if instance.available and resource_down:
+        resource_down.end = timezone.now()
+        resource_down.save()
 
 
 class TrainingRequestStatus(models.IntegerChoices):
