@@ -300,7 +300,6 @@ class ToolAdmin(admin.ModelAdmin):
         "_category",
         "_location",
         ("_requires_area_access", admin.RelatedOnlyFieldListFilter),
-        has_fk_filter("staff_charge", "Staff Charge"),
     )
     autocomplete_fields = [
         "_primary_owner",
@@ -1153,6 +1152,7 @@ class UsageEventAdmin(ObjPermissionAdminMixin, ModelAdminRedirectMixin, admin.Mo
         "start",
         "end",
         "waived",
+        has_fk_filter("staff_charge", "Staff Charge"),
         ("tool", admin.RelatedOnlyFieldListFilter),
         ("project__project_types", admin.RelatedOnlyFieldListFilter),
         ("project__account__type", admin.RelatedOnlyFieldListFilter),
