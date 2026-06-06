@@ -6830,7 +6830,7 @@ class TrainingHistory(BaseModel):
         )
 
     @property
-    def dates(self) -> List[datetime]:
+    def dates(self) -> List[datetime.datetime]:
         return (
             [self.training_event.start]
             if self.training_event
