@@ -10,7 +10,8 @@ except ModuleNotFoundError:
     from NEMO.plugins.lab_mount.client import DaemonClient
 
 logger = logging.getLogger(__name__)
-client = DaemonClient()
+client = DaemonClient("http://127.0.0.1:5000")
+
 
 @receiver(post_save, sender=UsageEvent)
 def on_usage_event_saved(sender, instance, created, **kwargs):
@@ -22,7 +23,8 @@ def on_usage_event_saved(sender, instance, created, **kwargs):
     try:
         username = instance.user.username
         tool_name = instance.tool.name
-        
+        print(f"!!! NEMO SENDING: user={username}, tool={tool_name}, created={created}")
+
         logger.debug(f"UsageEvent saved signal received: user={username}, tool={tool_name}, created={created}, end={instance.end}")
         
         if created:

@@ -1,58 +1,54 @@
+"""
+HTTP Client for Lab Data Mount Daemon (No HMAC - Simple Version)
+"""
+
 import logging
-import os
 import requests
-from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
+
 class DaemonClient:
-    def __init__(self):
-        # Read daemon URL from environment variable or settings, default to http://127.0.0.1:5000
-        self.url = os.environ.get(
-            "LAB_DAEMON_URL", 
-            getattr(settings, "LAB_DAEMON_URL", "http://127.0.0.1:5000")
-        ).rstrip("/")
+    def __init__(self, daemon_url, timeout=5):
+        self.daemon_url = daemon_url
+        self.timeout = timeout
+    
+    def mount(self, user, tool, session_id=None):
+        payload = {'user': user, 'tool': tool}
+        if session_id:
+            payload['session_id'] = session_id
         
-        self.timeout = getattr(settings, "LAB_DAEMON_TIMEOUT", 5)
-        logger.debug(f"DaemonClient initialized with URL: {self.url}, timeout: {self.timeout}")
-
-    def mount(self, user: str, tool: str) -> bool:
-        """
-        Sends a POST request to /mount with user and tool info.
-        """
-        url = f"{self.url}/mount"
-        payload = {
-            "user": user,
-            "username": user,  # Defensive: send both 'user' and 'username'
-            "tool": tool
-        }
-        return self._send_request(url, payload)
-
-    def unmount(self, user: str, tool: str) -> bool:
-        """
-        Sends a POST request to /unmount with user and tool info.
-        """
-        url = f"{self.url}/unmount"
-        payload = {
-            "user": user,
-            "username": user,  # Defensive: send both 'user' and 'username'
-            "tool": tool
-        }
-        return self._send_request(url, payload)
-
-    def _send_request(self, url: str, payload: dict) -> bool:
-        logger.info(f"Sending POST request to {url} with payload: {payload}")
         try:
-            response = requests.post(url, json=payload, timeout=self.timeout)
-            logger.info(f"Received response from {url}: status={response.status_code}, content={response.text}")
-            if response.status_code in (200, 201, 202):
+            resp = requests.post(
+                f"{self.daemon_url}/mount",
+                json=payload,
+                timeout=self.timeout
+            )
+            if resp.status_code in (200, 201):
+                logger.info(f"Mounted {user} on {tool}")
                 return True
-            else:
-                logger.error(f"Daemon returned unexpected status code {response.status_code} for URL {url}")
-                return False
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error communicating with daemon at {url}: {e}", exc_info=True)
+            logger.error(f"Mount failed: {resp.status_code}")
             return False
         except Exception as e:
-            logger.error(f"Unexpected error in DaemonClient calling {url}: {e}", exc_info=True)
+            logger.error(f"Mount error: {e}")
+            return False
+    
+    def unmount(self, user, tool, session_id=None):
+        payload = {'user': user, 'tool': tool}
+        if session_id:
+            payload['session_id'] = session_id
+        
+        try:
+            resp = requests.post(
+                f"{self.daemon_url}/unmount",
+                json=payload,
+                timeout=self.timeout
+            )
+            if resp.status_code == 200:
+                logger.info(f"Unmounted {user} from {tool}")
+                return True
+            logger.error(f"Unmount failed: {resp.status_code}")
+            return False
+        except Exception as e:
+            logger.error(f"Unmount error: {e}")
             return False
