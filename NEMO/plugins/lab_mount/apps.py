@@ -12,7 +12,7 @@ class LabMountConfig(AppConfig):
         logger.info("LabDataMountPlugin initialized")
 
         # Read configuration (e.g. from settings)
-        daemon_url = getattr(settings, "LAB_DAEMON_URL", "http://127.0.0.1:5000")
+        daemon_url = getattr(settings, "LAB_DAEMON_URL", "http://143.244.144.91:5000")
         logger.info(f"Lab Data Mount plugin daemon URL: {daemon_url}")
 
         # Dynamic Signal Discovery

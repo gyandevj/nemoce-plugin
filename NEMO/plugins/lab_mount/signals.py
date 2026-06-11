@@ -8,9 +8,11 @@ try:
     from nemo.plugins.lab_mount.client import DaemonClient
 except ModuleNotFoundError:
     from NEMO.plugins.lab_mount.client import DaemonClient
+import os
 
 logger = logging.getLogger(__name__)
-client = DaemonClient("http://127.0.0.1:5000")
+daemon_url = os.environ.get("FILESERVER_DAEMON_URL", "http://143.244.144.91:5000") #to replace with oracle one
+client = DaemonClient(daemon_url)
 
 
 @receiver(post_save, sender=UsageEvent)
