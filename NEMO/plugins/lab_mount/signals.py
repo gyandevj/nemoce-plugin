@@ -1,7 +1,8 @@
 import logging
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from NEMO.models import UsageEvent
+from NEMO.models import UsageEvent, User
+
 
 # Support both lowercase and uppercase imports of the client module
 try:
