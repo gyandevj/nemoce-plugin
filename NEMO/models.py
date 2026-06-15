@@ -2520,7 +2520,7 @@ class Tool(SerializationByNameModel):
             # in case of alternate tool, recreate a new tool with only parent_tool and name (never visible)
             fresh_tool = Tool(id=self.id, parent_tool=self.parent_tool, name=self.name, visible=False)
             self.__dict__.update(fresh_tool.__dict__)
-        super().save(force_insert, force_update, using, update_fields)
+        super().save(force_insert=force_insert, force_update=force_update, using=using, update_fields=update_fields)
 
 
 class ToolUsageQuestions(models.Model):
