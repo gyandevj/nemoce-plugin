@@ -1,5 +1,9 @@
 """
-HTTP Client for Lab Data Mount Daemon (HMAC Verified Version)
+HTTP Client for Lab Data Mount Daemon (HMAC Verified Version - Hierarchical ID-based)
+
+Mount/unmount requests now include account_id and project_id so the daemon
+mounts only the specific project folder the user checked into, rather than
+the entire groups directory.
 """
 
 import hashlib
@@ -17,33 +21,50 @@ class DaemonClient:
     def __init__(self, daemon_url, timeout=5):
         self.daemon_url = daemon_url
         self.timeout = timeout
-    
-    def _sign_request(self, user, tool):
+
+    def _sign_request(self, user_id, tool, account_id=None, project_id=None):
         """
-        Generate HMAC signature headers for the request.
+        Generate HMAC-SHA256 signature headers.
+        Message format: {user_id}{tool}{account_id}{project_id}{timestamp}
+        account_id and project_id are included when provided so signatures
+        are bound to the specific project being mounted.
         """
         timestamp = str(int(time.time()))
-        message = f"{user}{tool}{timestamp}"
+        message = f"{user_id}{tool}"
+        if account_id is not None:
+            message += str(account_id)
+        if project_id is not None:
+            message += str(project_id)
+        message += timestamp
+
         signature = hmac.new(
             SECRET_KEY,
             message.encode('utf-8'),
             hashlib.sha256
         ).hexdigest()
-        
+
         return {
             'X-Timestamp': timestamp,
             'X-Signature': signature
         }
-    
-    def mount(self, user, tool, group=None, session_id=None):
-        payload = {'user': user, 'tool': tool}
-        if group:
-            payload['group'] = group
+
+    def mount(self, user_id, tool, account_id, project_id, session_id=None):
+        """
+        Request the daemon to mount the session directories for user_id on tool.
+        account_id and project_id specify exactly which project folder to expose
+        under my_groups/account_{account_id}/project_{project_id}/.
+        """
+        payload = {
+            'user_id': user_id,
+            'tool': tool,
+            'account_id': account_id,
+            'project_id': project_id,
+        }
         if session_id:
             payload['session_id'] = session_id
-        
-        headers = self._sign_request(user, tool)
-        
+
+        headers = self._sign_request(user_id, tool, account_id, project_id)
+
         try:
             resp = requests.post(
                 f"{self.daemon_url}/mount",
@@ -52,23 +73,33 @@ class DaemonClient:
                 timeout=self.timeout
             )
             if resp.status_code in (200, 201):
-                logger.info(f"Mounted {user} on {tool}")
+                logger.info(
+                    f"Successfully requested mount for user ID {user_id} on {tool} "
+                    f"(account={account_id}, project={project_id})"
+                )
                 return True
-            logger.error(f"Mount failed: {resp.status_code}")
+            logger.error(f"Mount request failed: {resp.status_code} - {resp.text}")
             return False
         except Exception as e:
-            logger.error(f"Mount error: {e}")
+            logger.error(f"Mount request error: {e}")
             return False
-    
-    def unmount(self, user, tool, group=None, session_id=None):
-        payload = {'user': user, 'tool': tool}
-        if group:
-            payload['group'] = group
+
+    def unmount(self, user_id, tool, account_id, project_id, session_id=None):
+        """
+        Request the daemon to unmount the session directories for user_id on tool.
+        account_id and project_id identify the exact project mount to tear down.
+        """
+        payload = {
+            'user_id': user_id,
+            'tool': tool,
+            'account_id': account_id,
+            'project_id': project_id,
+        }
         if session_id:
             payload['session_id'] = session_id
-        
-        headers = self._sign_request(user, tool)
-        
+
+        headers = self._sign_request(user_id, tool, account_id, project_id)
+
         try:
             resp = requests.post(
                 f"{self.daemon_url}/unmount",
@@ -77,10 +108,34 @@ class DaemonClient:
                 timeout=self.timeout
             )
             if resp.status_code == 200:
-                logger.info(f"Unmounted {user} from {tool}")
+                logger.info(
+                    f"Successfully requested unmount for user ID {user_id} from {tool} "
+                    f"(account={account_id}, project={project_id})"
+                )
                 return True
-            logger.error(f"Unmount failed: {resp.status_code}")
+            logger.error(f"Unmount request failed: {resp.status_code} - {resp.text}")
             return False
         except Exception as e:
-            logger.error(f"Unmount error: {e}")
+            logger.error(f"Unmount request error: {e}")
+            return False
+
+    def initialize_user(self, user_id):
+        """Trigger directory and quota initialization for a newly created user."""
+        payload = {'user_id': user_id, 'tool': 'system'}
+        headers = self._sign_request(user_id, 'system')
+
+        try:
+            resp = requests.post(
+                f"{self.daemon_url}/init_user",
+                json=payload,
+                headers=headers,
+                timeout=self.timeout
+            )
+            if resp.status_code in (200, 201):
+                logger.info(f"Successfully requested user folder initialization for user ID {user_id}")
+                return True
+            logger.error(f"User folder initialization request failed: {resp.status_code} - {resp.text}")
+            return False
+        except Exception as e:
+            logger.error(f"User folder initialization request error: {e}")
             return False

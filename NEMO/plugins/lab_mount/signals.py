@@ -3,7 +3,6 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from NEMO.models import UsageEvent, User
 
-
 # Support both lowercase and uppercase imports of the client module
 try:
     from nemo.plugins.lab_mount.client import DaemonClient
@@ -14,54 +13,78 @@ import requests
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
-daemon_url = os.environ.get("FILESERVER_DAEMON_URL", "http://143.244.144.91:5000") #to replace with oracle one
+daemon_url = os.environ.get("FILESERVER_DAEMON_URL", "http://143.244.144.91:5000")
 client = DaemonClient(daemon_url)
-
 
 
 @receiver(post_save, sender=UsageEvent)
 def on_usage_event_saved(sender, instance, created, **kwargs):
     """
     Signal handler for UsageEvent post_save.
-    On creation of active usage event, triggers mount.
+
+    On creation of an active usage event, triggers a mount for the specific
+    project the user selected at check-in:
+      - my_files/  -> /srv/labdata/users/u{user_id}
+      - my_groups/account_{account_id}/project_{project_id}/ -> specific project dir
+      - public/    -> /srv/labdata/public (read-only)
+
     On update where end timestamp is set, triggers unmount.
     """
     try:
+        user_id = instance.user.id
         username = instance.user.username
         tool_name = instance.tool.name
-        print(f"!!! NEMO SENDING: user={username}, tool={tool_name}, created={created}")
 
-        logger.debug(f"UsageEvent saved signal received: user={username}, tool={tool_name}, created={created}, end={instance.end}")
-        
-        # Extract group from Django user groups, with fallback mapping for testing
-        group_name = None
-        if hasattr(instance.user, 'groups') and instance.user.groups.exists():
-            group_name = instance.user.groups.first().name
-            
-        if not group_name:
-            mapping = {
-                'alice': 'cleanroom',
-                'bob': 'cleanroom',
-                'charlie': 'metrology',
-                'admin': 'staff',
-            }
-            group_name = mapping.get(username)
-        
+        # Extract project and account IDs from the selected project.
+        # UsageEvent.project is the project the user checked into.
+        project_id = instance.project.id if instance.project else None
+        # account_id is a direct FK on the Project model.
+        account_id = instance.project.account_id if instance.project else None
+
+        logger.debug(
+            f"UsageEvent saved: user={username} (ID: {user_id}), tool={tool_name}, "
+            f"project={project_id}, account={account_id}, created={created}, end={instance.end}"
+        )
+
         if created:
             if not instance.end:
-                logger.info(f"UsageEvent created (active session) for user '{username}' (group '{group_name}') on tool '{tool_name}'. Calling mount.")
-                success = client.mount(username, tool_name, group=group_name)
+                if project_id is None or account_id is None:
+                    logger.warning(
+                        f"UsageEvent created for user '{username}' on '{tool_name}' but no project "
+                        f"was selected (project={project_id}, account={account_id}). Skipping mount."
+                    )
+                    return
+                logger.info(
+                    f"UsageEvent created (active session) for user '{username}' (ID: {user_id}) "
+                    f"on tool '{tool_name}' with project {project_id} / account {account_id}. Calling mount."
+                )
+                success = client.mount(user_id, tool_name, account_id, project_id)
                 logger.info(f"Mount command result: {success}")
             else:
-                logger.info(f"UsageEvent created but already ended for user '{username}' on tool '{tool_name}'. Skipping mount.")
+                logger.info(
+                    f"UsageEvent created but already ended for user '{username}' on tool "
+                    f"'{tool_name}'. Skipping mount."
+                )
         else:
-            # It's an update. Check if the session is ending
+            # It's an update — check if the session is ending.
             if instance.end:
-                logger.info(f"UsageEvent updated (session ended) for user '{username}' (group '{group_name}') on tool '{tool_name}'. Calling unmount.")
-                success = client.unmount(username, tool_name, group=group_name)
+                if project_id is None or account_id is None:
+                    logger.warning(
+                        f"UsageEvent ended for user '{username}' on '{tool_name}' but project "
+                        f"info missing. Skipping unmount."
+                    )
+                    return
+                logger.info(
+                    f"UsageEvent updated (session ended) for user '{username}' (ID: {user_id}) "
+                    f"on tool '{tool_name}' with project {project_id} / account {account_id}. Calling unmount."
+                )
+                success = client.unmount(user_id, tool_name, account_id, project_id)
                 logger.info(f"Unmount command result: {success}")
             else:
-                logger.debug(f"UsageEvent updated but session is still active (no end date) for user '{username}' on tool '{tool_name}'.")
+                logger.debug(
+                    f"UsageEvent updated but session still active (no end date) for user "
+                    f"'{username}' on tool '{tool_name}'."
+                )
     except Exception as e:
         logger.error(f"Error in on_usage_event_saved signal handler: {e}", exc_info=True)
 
@@ -78,19 +101,17 @@ def provision_nextcloud_user(sender, instance, created, **kwargs):
             "Content-Type": "application/x-www-form-urlencoded"
         }
         auth = (settings.NEXTCLOUD_ADMIN_USER, settings.NEXTCLOUD_ADMIN_PASSWORD)
-        
+
         # NextCloud expects userid, password, email, and displayname.
-        # We set default password to 'dev' (or same username) for simplicity of testing.
         payload = {
             "userid": instance.username,
             "password": "dev",
             "email": instance.email,
             "displayName": f"{instance.first_name} {instance.last_name}"
         }
-        
+
         try:
-            logger.info(f"Syncing new user '{instance.username}' to NextCloud...")
-            # Using verify=False because the Let's Encrypt cert might be fresh or we want to bypass cert errors.
+            logger.info(f"Syncing new user '{instance.username}' (ID: {instance.id}) to NextCloud...")
             resp = requests.post(url, data=payload, headers=headers, auth=auth, timeout=10, verify=False)
             if resp.status_code in (200, 201):
                 logger.info(f"Successfully provisioned NextCloud user: {instance.username}")
@@ -99,3 +120,8 @@ def provision_nextcloud_user(sender, instance, created, **kwargs):
         except Exception as e:
             logger.error(f"Error calling NextCloud Provisioning API: {e}")
 
+        # Initialize directory on the file server daemon
+        try:
+            client.initialize_user(instance.id)
+        except Exception as e:
+            logger.error(f"Failed to request directory initialization for user ID {instance.id}: {e}")
