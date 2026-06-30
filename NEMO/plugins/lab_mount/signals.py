@@ -13,8 +13,27 @@ import requests
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
-daemon_url = os.environ.get("FILESERVER_DAEMON_URL", "http://143.244.144.91:5000")
-client = DaemonClient(daemon_url)
+daemon_url = os.environ.get("FILESERVER_DAEMON_URL", "https://localhost:5000")
+cert_path = os.environ.get("LAB_MOUNT_CERT_PATH")
+key_path = os.environ.get("LAB_MOUNT_KEY_PATH")
+ca_path = os.environ.get("LAB_MOUNT_CA_PATH")
+
+cert = (cert_path, key_path) if cert_path and key_path else None
+verify = ca_path if ca_path else True
+
+# Fallback to local dev certs if they exist
+if not cert:
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    project_root = os.path.dirname(base_dir)
+    dev_cert = os.path.join(project_root, "lab-daemon", "certs", "client.crt")
+    dev_key = os.path.join(project_root, "lab-daemon", "certs", "client.key")
+    dev_ca = os.path.join(project_root, "lab-daemon", "certs", "ca.crt")
+    if os.path.exists(dev_cert) and os.path.exists(dev_key):
+        cert = (dev_cert, dev_key)
+        verify = dev_ca
+
+client = DaemonClient(daemon_url, cert=cert, verify=verify)
+
 
 
 @receiver(post_save, sender=UsageEvent)
