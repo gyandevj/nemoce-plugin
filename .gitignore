@@ -15,3 +15,7 @@ nemo.log
 conf/
 *.log
 .vs/
+*.xlsx
+*.db
+*.toml
+*.splash_pad
